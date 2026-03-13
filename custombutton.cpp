@@ -65,27 +65,27 @@ void CustomButton::paintEvent(QPaintEvent *event)
     QColor bg, fg, border;
     switch (m_role) {
     case Primary:
-        bg = m_hovered ? QColor(0x1a7fc4) : QColor(0x0e639c);
-        if (isDown()) bg = QColor(0x094a75);
+        bg = m_hovered ? QColor(0x4aa6ff) : QColor(0x2e8cff);
+        if (isDown()) bg = QColor(0x1f6fcb);
         fg = Qt::white;
-        border = QColor(0x0a4d78);
+        border = QColor(0x1f6fcb);
         break;
     case Secondary:
-        bg = m_hovered ? QColor(0x3c3c3c) : QColor(0x2d2d30);
-        if (isDown()) bg = QColor(0x252526);
-        fg = QColor(0xe0e0e0);
-        border = QColor(0x454545);
+        bg = m_hovered ? QColor(0xe1efff) : QColor(0xf3f7ff);
+        if (isDown()) bg = QColor(0xd1e3ff);
+        fg = QColor(0x2e4f7f);
+        border = QColor(0xc0d7ff);
         break;
     case Danger:
-        bg = m_hovered ? QColor(0xc42b2b) : QColor(0xa12626);
-        if (isDown()) bg = QColor(0x7a1e1e);
+        bg = m_hovered ? QColor(0xff6961) : QColor(0xff4c4c);
+        if (isDown()) bg = QColor(0xe63b3b);
         fg = Qt::white;
-        border = QColor(0x6b1a1a);
+        border = QColor(0xd53434);
         break;
     case TitleBar:
         bg = Qt::transparent;
-        if (m_hovered) bg = isDown() ? QColor(0x505050) : QColor(0x404040);
-        fg = m_hovered ? QColor(0xffffff) : QColor(0xb0b0b0);
+        if (m_hovered) bg = isDown() ? QColor(0xb0c9ff) : QColor(0xc9dbff);
+        fg = m_hovered ? QColor(0x274066) : QColor(0x3c557a);
         border = Qt::transparent;
         break;
     }

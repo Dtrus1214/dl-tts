@@ -45,7 +45,7 @@
 #endif
 
 static const int TITLE_BAR_HEIGHT = 40;
-static const int WINDOW_RADIUS = 10;
+static const int WINDOW_RADIUS = 14;
 static const int CONTENT_PADDING = 14;
 
 MainWindow::MainWindow(QWidget *parent)
@@ -134,10 +134,6 @@ void MainWindow::setupUiDynamic()
     ttsLayout->addWidget(m_btnStop);
     contentLayout->addLayout(ttsLayout);
 
-    m_labelStatus = new QLabel(content);
-    m_labelStatus->setObjectName("labelStatus");
-    contentLayout->addWidget(m_labelStatus);
-
     rootLayout->addWidget(content);
 }
 
@@ -147,58 +143,54 @@ void MainWindow::setupWindowFrame()
     setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
     setAttribute(Qt::WA_TranslucentBackground); // so drop shadow is visible
 
-    const int w = 320;
-    const int h = 150;
-    setFixedSize(w, h);
-    setMinimumSize(w, h);
-
-    // Production-style palette: dark theme with clear hierarchy
+    // Crystal-style palette: light, airy blues and white
     const char *sheet = R"(
         QMainWindow {
             background-color: transparent;
         }
         QWidget#centralWidget {
-            background-color: rgba(22, 22, 24, 220);
-            border: 1px solid #3c3c3c;
+            background-color: #ffffff;
+            border: 1px solid #d0e4ff;
             border-radius: %1px;
         }
         QWidget#titleBar {
-            background-color: rgba(32, 32, 36, 235);
+            background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                              stop:0 #e4f3ff,
+                                              stop:1 #c0ddff);
             border-top-left-radius: %1px;
             border-top-right-radius: %1px;
         }
         QWidget#content {
-            background-color: rgba(22, 22, 24, 220);
+            background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                              stop:0 #f9fcff,
+                                              stop:1 #e4f1ff);
             border-bottom-left-radius: %1px;
             border-bottom-right-radius: %1px;
         }
         QLabel#labelTitle {
-            color: #f5f5f5;
+            color: #1f3b5e;
             font-size: 13px;
             font-weight: 600;
         }
         QLabel#labelStatus {
-            color: #858585;
+            color: #4d6580;
             font-size: 11px;
         }
         QPlainTextEdit#textSelected {
-            background-color: #1e1e1e;
-            color: #e0e0e0;
-            border: 1px solid #3c3c3c;
+            background-color: #ffffff;
+            color: #123456;
+            border: 1px solid #d0e4ff;
             border-radius: 6px;
             padding: 8px;
             font-size: 12px;
-            selection-background-color: #264f78;
+            selection-background-color: #c0ddff;
         }
     )";
     setStyleSheet(QString::fromUtf8(sheet).arg(WINDOW_RADIUS));
 
-    // Optional: subtle shadow for floating effect (Qt 5.14)
-    QGraphicsDropShadowEffect *shadow = new QGraphicsDropShadowEffect(m_centralWidget);
-    shadow->setBlurRadius(20);
-    shadow->setColor(QColor(0, 0, 0, 80));
-    shadow->setOffset(0, 4);
-    m_centralWidget->setGraphicsEffect(shadow);
+    // No window mask: rounded shape is drawn by Qt with antialiasing (soft edges).
+    // Shadow removed to avoid a dark rectangular area; content has transparent corners.
+    clearMask();
 }
 
 bool MainWindow::isInTitleBar(const QPoint &globalPos) const
