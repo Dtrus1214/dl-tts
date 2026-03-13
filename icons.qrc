@@ -5,5 +5,7 @@
         <file>icons/stop.svg</file>
         <file>icons/speaker.svg</file>
         <file>icons/close.svg</file>
+        <file>icons/man.svg</file>
+        <file>icons/woman.svg</file>
     </qresource>
 </RCC>

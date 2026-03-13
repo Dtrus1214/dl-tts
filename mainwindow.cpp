@@ -458,8 +458,10 @@ void MainWindow::setupSpeakerMenu()
 
     const QStringList names = { QStringLiteral("man1"), QStringLiteral("man2"),
                                 QStringLiteral("woman1"), QStringLiteral("woman2") };
+    const QIcon manIcon(QStringLiteral(":/icons/man.svg"));
+    const QIcon womanIcon(QStringLiteral(":/icons/woman.svg"));
     for (int i = 0; i < names.size(); ++i) {
-        QAction *a = m_speakerMenu->addAction(names.at(i));
+        QAction *a = m_speakerMenu->addAction(i < 2 ? manIcon : womanIcon, names.at(i));
         a->setCheckable(true);
         a->setData(i);
         group->addAction(a);
