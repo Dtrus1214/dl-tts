@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "custombutton.h"
+#include "tts/ttsengine.h"
 
 #include <QMouseEvent>
 #include <QClipboard>
@@ -55,6 +56,14 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(m_btnGetSelection, &QPushButton::clicked, this, &MainWindow::onGetSelection);
     connect(m_btnClose, &QPushButton::clicked, this, &QWidget::hide);
+
+    m_ttsEngine = new TtsEngine(this);
+    m_ttsEngine->initialize();
+    connect(m_ttsEngine, &TtsEngine::stateChanged, this, &MainWindow::onTtsStateChanged);
+    connect(m_btnPlay, &QPushButton::clicked, this, &MainWindow::onTtsPlay);
+    connect(m_btnPause, &QPushButton::clicked, this, &MainWindow::onTtsPause);
+    connect(m_btnStop, &QPushButton::clicked, this, &MainWindow::onTtsStop);
+    onTtsStateChanged(m_ttsEngine->state());
 
     setupTrayIcon();
     registerGlobalHotkey();
@@ -136,6 +145,19 @@ void MainWindow::setupUiDynamic()
     m_textSelected->setMinimumHeight(60);
     contentLayout->addWidget(m_textSelected);
 
+    QHBoxLayout *ttsLayout = new QHBoxLayout();
+    ttsLayout->setSpacing(8);
+    m_btnPlay = new CustomButton(tr("Play"), CustomButton::Primary, content);
+    m_btnPlay->setObjectName("btnTtsPlay");
+    m_btnPause = new CustomButton(tr("Pause"), CustomButton::Secondary, content);
+    m_btnPause->setObjectName("btnTtsPause");
+    m_btnStop = new CustomButton(tr("Stop"), CustomButton::Secondary, content);
+    m_btnStop->setObjectName("btnTtsStop");
+    ttsLayout->addWidget(m_btnPlay);
+    ttsLayout->addWidget(m_btnPause);
+    ttsLayout->addWidget(m_btnStop);
+    contentLayout->addLayout(ttsLayout);
+
     m_labelStatus = new QLabel(content);
     m_labelStatus->setObjectName("labelStatus");
     contentLayout->addWidget(m_labelStatus);
@@ -150,9 +172,9 @@ void MainWindow::setupWindowFrame()
     setAttribute(Qt::WA_TranslucentBackground); // so drop shadow is visible
 
     const int w = 380;
-    const int h = 260;
+    const int h = 300;
     setFixedSize(w, h);
-    setMinimumSize(340, 200);
+    setMinimumSize(340, 240);
 
     // Production-style palette: dark theme with clear hierarchy
     const char *sheet = R"(
@@ -373,6 +395,41 @@ void MainWindow::showClipboardText()
         m_textSelected->setPlaceholderText(QString());
         m_labelStatus->setText(tr("Last: %1 character(s) from clipboard").arg(n));
     }
+}
+
+void MainWindow::onTtsPlay()
+{
+    if (!m_ttsEngine || !m_ttsEngine->isAvailable())
+        return;
+    QString text = m_textSelected->toPlainText().trimmed();
+    if (text.isEmpty())
+        return;
+    if (m_ttsEngine->state() == 2) // Paused
+        m_ttsEngine->resume();
+    else
+        m_ttsEngine->speak(text);
+}
+
+void MainWindow::onTtsPause()
+{
+    if (m_ttsEngine && m_ttsEngine->isAvailable())
+        m_ttsEngine->pause();
+}
+
+void MainWindow::onTtsStop()
+{
+    if (m_ttsEngine && m_ttsEngine->isAvailable())
+        m_ttsEngine->stop();
+}
+
+void MainWindow::onTtsStateChanged(int state)
+{
+    if (!m_btnPlay || !m_btnPause || !m_btnStop)
+        return;
+    bool available = m_ttsEngine && m_ttsEngine->isAvailable();
+    m_btnPlay->setEnabled(available);
+    m_btnPause->setEnabled(available && (state == 1));   // Speaking
+    m_btnStop->setEnabled(available && (state == 1 || state == 2 || state == 4)); // Speaking, Paused, or Loading
 }
 
 void MainWindow::registerGlobalHotkey()

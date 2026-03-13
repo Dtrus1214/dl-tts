@@ -24,6 +24,7 @@ class QAction;
 QT_END_NAMESPACE
 
 class CustomButton;
+class TtsEngine;
 
 class MainWindow : public QMainWindow
 {
@@ -47,6 +48,10 @@ protected:
 private slots:
     void onGetSelection();
     void showClipboardText();
+    void onTtsPlay();
+    void onTtsPause();
+    void onTtsStop();
+    void onTtsStateChanged(int state);
     void toggleWindowVisibility();
     void quitFromTray();
 #if defined(Q_OS_WIN)
@@ -72,6 +77,11 @@ private:
     QLabel *m_labelSelected = nullptr;
     QPlainTextEdit *m_textSelected = nullptr;
     QLabel *m_labelStatus = nullptr;
+
+    TtsEngine *m_ttsEngine = nullptr;
+    CustomButton *m_btnPlay = nullptr;
+    CustomButton *m_btnPause = nullptr;
+    CustomButton *m_btnStop = nullptr;
 
     QPoint m_dragPosition;
     bool m_dragging = false;
