@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "custombutton.h"
 #include "tts/ttsengine.h"
+#include "pdfviewerform.h"
 
 #include <QMouseEvent>
 #include <QClipboard>
@@ -135,10 +136,17 @@ void MainWindow::setupUiDynamic()
     m_btnSpeaker->setObjectName("btnSpeaker");
     m_btnSpeaker->setFixedSize(32, 32);
     m_btnSpeaker->setIconPath(QStringLiteral(":/icons/speaker.svg"));
+    m_btnPdfViewer = new CustomButton(CustomButton::Secondary, content);
+    m_btnPdfViewer->setObjectName("btnPdfViewer");
+    m_btnPdfViewer->setFixedSize(48, 32);
+    m_btnPdfViewer->setText(tr("PDF"));
+    m_btnPdfViewer->setToolTip(tr("Open PDF Viewer"));
     ttsLayout->addWidget(m_btnPlay);
     ttsLayout->addWidget(m_btnStop);
     ttsLayout->addWidget(m_btnSpeaker);
+    ttsLayout->addWidget(m_btnPdfViewer);
     contentLayout->addLayout(ttsLayout);
+    connect(m_btnPdfViewer, &QPushButton::clicked, this, &MainWindow::openPdfViewer);
 
     rootLayout->addWidget(content);
 }
@@ -500,6 +508,17 @@ void MainWindow::updateSpeakerToolTip()
     m_btnSpeaker->setToolTip(tr("Speaker: %1 (click to change)").arg(name));
 }
 
+void MainWindow::openPdfViewer()
+{
+    if (!m_pdfViewerForm) {
+        m_pdfViewerForm = new PdfViewerForm(m_ttsEngine, this);
+        m_pdfViewerForm->setAttribute(Qt::WA_DeleteOnClose, false);
+    }
+    m_pdfViewerForm->show();
+    m_pdfViewerForm->raise();
+    m_pdfViewerForm->activateWindow();
+}
+
 void MainWindow::onTtsStateChanged(int state)
 {
     if (!m_btnPlay || !m_btnStop)
@@ -509,8 +528,8 @@ void MainWindow::onTtsStateChanged(int state)
     bool paused = (state == TtsEngine::Paused);
     bool loading = (state == TtsEngine::Loading);
 
-    // Update play button icon (play vs pause)
-    if (speaking || paused)
+    // Update play button icon: show pause only when speaking; show play when paused or ready (click = resume/start)
+    if (speaking)
         m_btnPlay->setIconPath(QStringLiteral(":/icons/pause.svg"));
     else
         m_btnPlay->setIconPath(QStringLiteral(":/icons/play.svg"));

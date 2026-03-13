@@ -46,6 +46,9 @@
     <ClCompile Include="mainwindow.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="pdfviewerform.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="tts\ttsengine.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -55,6 +58,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="mainwindow.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="pdfviewerform.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="tts\ttsengine.h">

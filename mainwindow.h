@@ -25,6 +25,7 @@ QT_END_NAMESPACE
 
 class CustomButton;
 class TtsEngine;
+class PdfViewerForm;
 
 class MainWindow : public QMainWindow
 {
@@ -54,6 +55,7 @@ private slots:
     void onSpeakerSelected(QAction *action);
     void playClipboardSelection();
     void toggleWindowVisibility();
+    void openPdfViewer();
     void quitFromTray();
 #if defined(Q_OS_WIN)
     void doCopyFromForeground();
@@ -81,6 +83,8 @@ private:
     CustomButton *m_btnPlay = nullptr;
     CustomButton *m_btnStop = nullptr;
     CustomButton *m_btnSpeaker = nullptr;
+    CustomButton *m_btnPdfViewer = nullptr;
+    PdfViewerForm *m_pdfViewerForm = nullptr;
     QMenu *m_speakerMenu = nullptr;
     int m_currentSpeakerId = 0;
 

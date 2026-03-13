@@ -19,16 +19,28 @@ unix:!macx: LIBS += -lxcb -lxcb-xtest -lxcb-keysyms
 
 DEFINES += QT_DEPRECATED_WARNINGS
 
+# Optional: set POPPLER_DIR to Poppler install dir for PDF viewer (e.g. C:/poppler-build)
+POPPLER_DIR = c:/poppler-build
+
+!isEmpty(POPPLER_DIR) {
+    DEFINES += HAVE_POPPLER
+    INCLUDEPATH += $$POPPLER_DIR/include $$POPPLER_DIR/include/poppler
+    win32: LIBS += -L$$POPPLER_DIR/lib -lpoppler-qt5
+    unix: LIBS += -L$$POPPLER_DIR/lib -lpoppler-qt5
+}
+
 SOURCES += \
     main.cpp \
     mainwindow.cpp \
     custombutton.cpp \
-    tts/ttsengine.cpp
+    tts/ttsengine.cpp \
+    pdfviewerform.cpp
 
 HEADERS += \
     mainwindow.h \
     custombutton.h \
-    tts/ttsengine.h
+    tts/ttsengine.h \
+    pdfviewerform.h
 
 RESOURCES += icons.qrc
 
