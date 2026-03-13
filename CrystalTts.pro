@@ -5,6 +5,7 @@ CONFIG += c++11
 TARGET = CrystalTts
 
 win32: LIBS += -luser32
+unix:!macx: LIBS += -lxcb -lxcb-xtest -lxcb-keysyms
 
 DEFINES += QT_DEPRECATED_WARNINGS
 

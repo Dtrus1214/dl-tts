@@ -25,6 +25,24 @@
 #include <windows.h>
 #endif
 
+#if defined(Q_OS_UNIX) && !defined(Q_OS_MAC)
+#include <QGuiApplication>
+#include <QWindow>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtGui/qnativeinterface.h>
+#endif
+#include <xcb/xcb.h>
+#include <xcb/xtest.h>
+#include <xcb/xcb_keysyms.h>
+/* Keysym values (avoid X11/keysymdef.h dependency) */
+#ifndef XK_Control_L
+#define XK_Control_L 0xffe3
+#endif
+#ifndef XK_c
+#define XK_c         0x0063
+#endif
+#endif
+
 static const int TITLE_BAR_HEIGHT = 40;
 static const int WINDOW_RADIUS = 10;
 static const int CONTENT_PADDING = 14;
@@ -325,6 +343,9 @@ void MainWindow::onGetSelection()
     else
         m_foregroundAtHotkey = fg;
     QTimer::singleShot(20, this, &MainWindow::doCopyFromForeground);
+#elif defined(Q_OS_UNIX) && !defined(Q_OS_MAC)
+    simulateCopy();
+    QTimer::singleShot(150, this, &MainWindow::showClipboardText);
 #else
     showClipboardText();
 #endif
@@ -387,5 +408,37 @@ void MainWindow::simulateCopy()
     inputs[3].ki.wVk = VK_CONTROL;
     inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
     SendInput(4, inputs, sizeof(INPUT));
+#elif defined(Q_OS_UNIX) && !defined(Q_OS_MAC)
+    xcb_connection_t *conn = nullptr;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    if (auto *x11 = qApp->nativeInterface<QNativeInterface::QX11Application>())
+        conn = x11->connection();
+#else
+    if (QWindow *win = windowHandle())
+        conn = static_cast<xcb_connection_t *>(qApp->platformNativeInterface()->nativeResourceForWindow("connection", win));
+#endif
+    if (!conn) return;
+    xcb_key_symbols_t *syms = xcb_key_symbols_alloc(conn);
+    if (!syms) return;
+    xcb_keycode_t *ctrl_keycodes = xcb_key_symbols_get_keycode(syms, XK_Control_L);
+    xcb_keycode_t *c_keycodes = xcb_key_symbols_get_keycode(syms, XK_c);
+    if (!ctrl_keycodes || !c_keycodes) {
+        free(ctrl_keycodes);
+        free(c_keycodes);
+        xcb_key_symbols_free(syms);
+        return;
+    }
+    xcb_keycode_t ctrl_kc = ctrl_keycodes[0];
+    xcb_keycode_t c_kc = c_keycodes[0];
+    free(ctrl_keycodes);
+    free(c_keycodes);
+    xcb_key_symbols_free(syms);
+
+    /* Ctrl down, C down, C up, Ctrl up (XTest sends to focused window) */
+    xcb_test_fake_input(conn, XCB_KEY_PRESS, ctrl_kc, XCB_CURRENT_TIME, XCB_NONE, 0, 0, 0);
+    xcb_test_fake_input(conn, XCB_KEY_PRESS, c_kc, XCB_CURRENT_TIME, XCB_NONE, 0, 0, 0);
+    xcb_test_fake_input(conn, XCB_KEY_RELEASE, c_kc, XCB_CURRENT_TIME, XCB_NONE, 0, 0, 0);
+    xcb_test_fake_input(conn, XCB_KEY_RELEASE, ctrl_kc, XCB_CURRENT_TIME, XCB_NONE, 0, 0, 0);
+    xcb_flush(conn);
 #endif
 }
