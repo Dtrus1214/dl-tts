@@ -2,6 +2,9 @@
 #include <QPainter>
 #include <QEvent>
 #include <QPainterPath>
+#include <QFile>
+#include <QSvgRenderer>
+#include <QImage>
 
 CustomButton::CustomButton(const QString &text, ButtonRole role, QWidget *parent)
     : QPushButton(text, parent)
@@ -26,6 +29,38 @@ void CustomButton::setButtonRole(ButtonRole role)
     if (m_role != role) {
         m_role = role;
         updateStyle();
+    }
+}
+
+void CustomButton::setIconPath(const QString &path)
+{
+    if (m_iconPath == path)
+        return;
+    m_iconPath = path;
+    m_iconPixmap = QPixmap();
+    loadIcon();
+    update();
+}
+
+void CustomButton::loadIcon()
+{
+    if (m_iconPath.isEmpty())
+        return;
+    const int size = 64; // load at 1x for scaling
+    if (m_iconPath.endsWith(QLatin1String(".svg"), Qt::CaseInsensitive)) {
+        QSvgRenderer renderer;
+        if (renderer.load(m_iconPath)) {
+            QImage img(size, size, QImage::Format_ARGB32);
+            img.fill(Qt::transparent);
+            QPainter p(&img);
+            renderer.render(&p);
+            p.end();
+            m_iconPixmap = QPixmap::fromImage(img);
+        }
+    } else {
+        m_iconPixmap.load(m_iconPath);
+        if (!m_iconPixmap.isNull())
+            m_iconPixmap = m_iconPixmap.scaled(size, size, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     }
 }
 
@@ -103,6 +138,21 @@ void CustomButton::paintEvent(QPaintEvent *event)
     p.setPen(fg);
     p.setBrush(Qt::NoBrush);
     if (text().isEmpty()) {
+        if (!m_iconPixmap.isNull()) {
+            QRect iconRect = rect.adjusted(4, 4, -4, -4);
+            QPixmap scaled = m_iconPixmap.scaled(iconRect.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            QImage img = scaled.toImage().convertToFormat(QImage::Format_ARGB32);
+            for (int y = 0; y < img.height(); ++y) {
+                for (int x = 0; x < img.width(); ++x) {
+                    QRgb px = img.pixel(x, y);
+                    int a = qAlpha(px);
+                    if (a > 0)
+                        img.setPixel(x, y, qRgba(fg.red(), fg.green(), fg.blue(), a));
+                }
+            }
+            p.drawImage(iconRect, img);
+            return;
+        }
         const QString name = objectName();
         if (m_role == TitleBar) {
             // Draw × for close

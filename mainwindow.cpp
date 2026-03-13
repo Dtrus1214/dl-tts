@@ -109,6 +109,7 @@ void MainWindow::setupUiDynamic()
     m_btnClose->setObjectName("btnClose");
     m_btnClose->setText(QString());
     m_btnClose->setFixedSize(28, 28);
+    m_btnClose->setIconPath(QStringLiteral(":/icons/close.svg"));
     titleLayout->addWidget(m_btnClose, 0, Qt::AlignVCenter);
 
     rootLayout->addWidget(m_titleBar);
@@ -125,12 +126,15 @@ void MainWindow::setupUiDynamic()
     m_btnPlay = new CustomButton(CustomButton::Primary, content);
     m_btnPlay->setObjectName("btnTtsPlay");
     m_btnPlay->setFixedSize(32, 32);
+    m_btnPlay->setIconPath(QStringLiteral(":/icons/play.svg"));
     m_btnStop = new CustomButton(CustomButton::Secondary, content);
     m_btnStop->setObjectName("btnTtsStop");
     m_btnStop->setFixedSize(32, 32);
+    m_btnStop->setIconPath(QStringLiteral(":/icons/stop.svg"));
     m_btnSpeaker = new CustomButton(CustomButton::Secondary, content);
     m_btnSpeaker->setObjectName("btnSpeaker");
     m_btnSpeaker->setFixedSize(32, 32);
+    m_btnSpeaker->setIconPath(QStringLiteral(":/icons/speaker.svg"));
     ttsLayout->addWidget(m_btnPlay);
     ttsLayout->addWidget(m_btnStop);
     ttsLayout->addWidget(m_btnSpeaker);
@@ -503,12 +507,11 @@ void MainWindow::onTtsStateChanged(int state)
     bool paused = (state == TtsEngine::Paused);
     bool loading = (state == TtsEngine::Loading);
 
-    // Update play button icon via objectName (play vs pause)
+    // Update play button icon (play vs pause)
     if (speaking || paused)
-        m_btnPlay->setObjectName("btnTtsPause");
+        m_btnPlay->setIconPath(QStringLiteral(":/icons/pause.svg"));
     else
-        m_btnPlay->setObjectName("btnTtsPlay");
-    m_btnPlay->update();
+        m_btnPlay->setIconPath(QStringLiteral(":/icons/play.svg"));
 
     m_btnPlay->setEnabled(available && !loading);
     m_btnStop->setEnabled(available && (speaking || paused || loading)); // Speaking, Paused, or Loading

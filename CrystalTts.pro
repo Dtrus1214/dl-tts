@@ -1,6 +1,6 @@
 # Offline TTS uses sherpa-onnx C API (in-process) + QMediaPlayer
 # Set SHERPA_ONNX_DIR to sherpa-onnx install dir (e.g. C:/sherpa-onnx-install) to auto-add include/lib.
-QT       += core gui widgets multimedia concurrent
+QT       += core gui widgets multimedia concurrent svg
 
 SHERPA_ONNX_DIR = C:/sherpa-onnx
 
@@ -29,6 +29,8 @@ HEADERS += \
     mainwindow.h \
     custombutton.h \
     tts/ttsengine.h
+
+RESOURCES += icons.qrc
 
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin

@@ -67,19 +67,19 @@
   <Import Project="$(QtMsBuild)\qt_defaults.props" Condition="Exists('$(QtMsBuild)\qt_defaults.props')" />
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <QtInstall>5.14.2_msvc2017</QtInstall>
-    <QtModules>core;network;gui;multimedia;widgets;concurrent</QtModules>
+    <QtModules>core;network;gui;svg;multimedia;widgets;concurrent</QtModules>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="QtSettings">
-    <QtInstall>5.14.2_msvc2017</QtInstall>
-    <QtModules>core;network;gui;multimedia;widgets;concurrent</QtModules>
+    <QtInstall>5.14.2_msvc2017_64</QtInstall>
+    <QtModules>core;network;gui;svg;multimedia;widgets;concurrent</QtModules>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <QtInstall>5.14.2_msvc2017</QtInstall>
-    <QtModules>core;network;gui;multimedia;widgets;concurrent</QtModules>
+    <QtModules>core;network;gui;svg;multimedia;widgets;concurrent</QtModules>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="QtSettings">
     <QtInstall>5.14.2_msvc2017_64</QtInstall>
-    <QtModules>core;network;gui;multimedia;widgets;concurrent</QtModules>
+    <QtModules>core;network;gui;svg;multimedia;widgets;concurrent</QtModules>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') OR !Exists('$(QtMsBuild)\Qt.props')">
     <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
@@ -169,6 +169,13 @@
       <QtMocDir>$(Configuration)</QtMocDir>
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
+    <QtRcc>
+      <Compression>default</Compression>
+      <InitFuncName>icons</InitFuncName>
+      <ExecutionDescription>Rcc'ing %(Identity)...</ExecutionDescription>
+      <QtRccDir>$(Configuration)</QtRccDir>
+      <QtRccFileName>qrc_%(Filename).cpp</QtRccFileName>
+    </QtRcc>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -221,6 +228,13 @@
       <QtMocDir>$(Configuration)</QtMocDir>
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
+    <QtRcc>
+      <Compression>default</Compression>
+      <InitFuncName>icons</InitFuncName>
+      <ExecutionDescription>Rcc'ing %(Identity)...</ExecutionDescription>
+      <QtRccDir>$(Configuration)</QtRccDir>
+      <QtRccFileName>qrc_%(Filename).cpp</QtRccFileName>
+    </QtRcc>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -261,6 +275,13 @@
     <ResourceCompile>
       <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;QT_DEPRECATED_WARNINGS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
+    <QtRcc>
+      <InitFuncName>icons</InitFuncName>
+      <Compression>default</Compression>
+      <ExecutionDescription>Rcc'ing %(Identity)...</ExecutionDescription>
+      <QtRccDir>$(Configuration)</QtRccDir>
+      <QtRccFileName>qrc_%(Filename).cpp</QtRccFileName>
+    </QtRcc>
     <QtMoc>
       <CompilerFlavor>msvc</CompilerFlavor>
       <Include>./$(Configuration)/moc_predefs.h</Include>
@@ -309,6 +330,13 @@
     <ResourceCompile>
       <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;QT_DEPRECATED_WARNINGS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
+    <QtRcc>
+      <InitFuncName>icons</InitFuncName>
+      <Compression>default</Compression>
+      <ExecutionDescription>Rcc'ing %(Identity)...</ExecutionDescription>
+      <QtRccDir>$(Configuration)</QtRccDir>
+      <QtRccFileName>qrc_%(Filename).cpp</QtRccFileName>
+    </QtRcc>
     <QtMoc>
       <CompilerFlavor>msvc</CompilerFlavor>
       <Include>./$(Configuration)/moc_predefs.h</Include>
@@ -352,6 +380,14 @@
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)\moc_predefs.h;%(Outputs)</Outputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)\moc_predefs.h;%(Outputs)</Outputs>
     </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="icons\close.svg" />
+    <QtRcc Include="icons.qrc" />
+    <None Include="icons\pause.svg" />
+    <None Include="icons\play.svg" />
+    <None Include="icons\speaker.svg" />
+    <None Include="icons\stop.svg" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="$(QtMsBuild)\qt.targets" Condition="Exists('$(QtMsBuild)\qt.targets')" />

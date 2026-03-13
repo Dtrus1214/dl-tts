@@ -17,6 +17,16 @@
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
     </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{D9D6E242-F8AF-46E4-B9FD-80ECBC20BA3E}</UniqueIdentifier>
+      <Extensions>qrc;*</Extensions>
+      <ParseFiles>false</ParseFiles>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{D9D6E242-F8AF-46E4-B9FD-80ECBC20BA3E}</UniqueIdentifier>
+      <Extensions>qrc;*</Extensions>
+      <ParseFiles>false</ParseFiles>
+    </Filter>
     <Filter Include="Source Files">
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
       <Extensions>cpp;c;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
@@ -58,5 +68,25 @@
     <CustomBuild Include="release\moc_predefs.h.cbt">
       <Filter>Generated Files</Filter>
     </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="icons\close.svg">
+      <Filter>Resource Files</Filter>
+    </None>
+    <QtRcc Include="icons.qrc">
+      <Filter>Resource Files</Filter>
+    </QtRcc>
+    <None Include="icons\pause.svg">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="icons\play.svg">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="icons\speaker.svg">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="icons\stop.svg">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
 </Project>
