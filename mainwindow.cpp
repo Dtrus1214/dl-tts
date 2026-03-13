@@ -20,6 +20,7 @@
 #include <QSystemTrayIcon>
 #include <QMenu>
 #include <QAction>
+#include <QActionGroup>
 #include <QStyle>
 
 #ifdef Q_OS_WIN
@@ -59,8 +60,9 @@ MainWindow::MainWindow(QWidget *parent)
     m_ttsEngine->initialize();
     connect(m_ttsEngine, &TtsEngine::stateChanged, this, &MainWindow::onTtsStateChanged);
     connect(m_btnPlay, &QPushButton::clicked, this, &MainWindow::onTtsPlay);
-    connect(m_btnPause, &QPushButton::clicked, this, &MainWindow::onTtsPause);
     connect(m_btnStop, &QPushButton::clicked, this, &MainWindow::onTtsStop);
+    connect(m_btnSpeaker, &QPushButton::clicked, this, &MainWindow::onSpeakerButtonClicked);
+    setupSpeakerMenu();
     onTtsStateChanged(m_ttsEngine->state());
 
     setupTrayIcon();
@@ -123,15 +125,15 @@ void MainWindow::setupUiDynamic()
     m_btnPlay = new CustomButton(CustomButton::Primary, content);
     m_btnPlay->setObjectName("btnTtsPlay");
     m_btnPlay->setFixedSize(32, 32);
-    m_btnPause = new CustomButton(CustomButton::Secondary, content);
-    m_btnPause->setObjectName("btnTtsPause");
-    m_btnPause->setFixedSize(32, 32);
     m_btnStop = new CustomButton(CustomButton::Secondary, content);
     m_btnStop->setObjectName("btnTtsStop");
     m_btnStop->setFixedSize(32, 32);
+    m_btnSpeaker = new CustomButton(CustomButton::Secondary, content);
+    m_btnSpeaker->setObjectName("btnSpeaker");
+    m_btnSpeaker->setFixedSize(32, 32);
     ttsLayout->addWidget(m_btnPlay);
-    ttsLayout->addWidget(m_btnPause);
     ttsLayout->addWidget(m_btnStop);
+    ttsLayout->addWidget(m_btnSpeaker);
     contentLayout->addLayout(ttsLayout);
 
     rootLayout->addWidget(content);
@@ -351,8 +353,16 @@ void MainWindow::onTtsPlay()
     if (!m_ttsEngine || !m_ttsEngine->isAvailable())
         return;
 
-    // If already paused, just resume without re-copying
-    if (m_ttsEngine->state() == TtsEngine::Paused) {
+    int s = m_ttsEngine->state();
+    if (s == TtsEngine::Loading)
+        return;
+
+    // Toggle behaviour: if speaking -> pause, if paused -> resume
+    if (s == TtsEngine::Speaking) {
+        m_ttsEngine->pause();
+        return;
+    }
+    if (s == TtsEngine::Paused) {
         m_ttsEngine->resume();
         return;
     }
@@ -375,12 +385,6 @@ void MainWindow::onTtsPlay()
 #endif
 }
 
-void MainWindow::onTtsPause()
-{
-    if (m_ttsEngine && m_ttsEngine->isAvailable())
-        m_ttsEngine->pause();
-}
-
 void MainWindow::onTtsStop()
 {
     if (m_ttsEngine && m_ttsEngine->isAvailable())
@@ -396,20 +400,120 @@ void MainWindow::playClipboardSelection()
     if (text.isEmpty())
         return;
 
-    if (m_ttsEngine->state() == TtsEngine::Paused)
+    if (m_ttsEngine->state() == TtsEngine::Paused) {
         m_ttsEngine->resume();
-    else
+    } else {
         m_ttsEngine->speak(text);
+    }
+}
+
+void MainWindow::setupSpeakerMenu()
+{
+    if (!m_btnSpeaker)
+        return;
+
+    m_speakerMenu = new QMenu(this);
+    m_speakerMenu->setObjectName("speakerMenu");
+
+    // Crystal-style: light blue/white to match main UI
+    m_speakerMenu->setStyleSheet(QStringLiteral(
+        "QMenu#speakerMenu {"
+        "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #f9fcff, stop:1 #e4f1ff);"
+        "  border: 1px solid #d0e4ff;"
+        "  border-radius: 8px;"
+        "  padding: 4px 0;"
+        "}"
+        "QMenu#speakerMenu::item {"
+        "  padding: 6px 24px 6px 12px;"
+        "  color: #1f3b5e;"
+        "  font-size: 12px;"
+        "}"
+        "QMenu#speakerMenu::item:selected {"
+        "  background: #c9dbff;"
+        "  color: #1f3b5e;"
+        "}"
+        "QMenu#speakerMenu::item:checked {"
+        "  background: #e1efff;"
+        "  font-weight: 600;"
+        "}"
+        "QMenu#speakerMenu::item:checked:selected {"
+        "  background: #c9dbff;"
+        "}"
+        "QMenu#speakerMenu::indicator {"
+        "  width: 12px;"
+        "  left: 4px;"
+        "}"
+        "QMenu#speakerMenu::indicator:checked {"
+        "  background: #2e8cff;"
+        "  border-radius: 2px;"
+        "}"
+    ));
+
+    QActionGroup *group = new QActionGroup(m_speakerMenu);
+    group->setExclusive(true);
+
+    const QStringList names = { QStringLiteral("man1"), QStringLiteral("man2"),
+                                QStringLiteral("woman1"), QStringLiteral("woman2") };
+    for (int i = 0; i < names.size(); ++i) {
+        QAction *a = m_speakerMenu->addAction(names.at(i));
+        a->setCheckable(true);
+        a->setData(i);
+        group->addAction(a);
+        if (i == m_currentSpeakerId)
+            a->setChecked(true);
+    }
+    connect(m_speakerMenu, &QMenu::triggered, this, &MainWindow::onSpeakerSelected);
+    updateSpeakerToolTip();
+}
+
+void MainWindow::onSpeakerButtonClicked()
+{
+    if (!m_btnSpeaker || !m_speakerMenu)
+        return;
+    m_speakerMenu->exec(m_btnSpeaker->mapToGlobal(QPoint(0, m_btnSpeaker->height())));
+}
+
+void MainWindow::onSpeakerSelected(QAction *action)
+{
+    if (!action || !action->data().isValid())
+        return;
+    m_currentSpeakerId = action->data().toInt();
+    action->setChecked(true);
+    updateSpeakerToolTip();
+    // TODO: pass m_currentSpeakerId to TtsEngine when it supports speaker selection
+}
+
+void MainWindow::updateSpeakerToolTip()
+{
+    if (!m_btnSpeaker)
+        return;
+    const QStringList names = { QStringLiteral("man1"), QStringLiteral("man2"),
+                                QStringLiteral("woman1"), QStringLiteral("woman2") };
+    QString name = (m_currentSpeakerId >= 0 && m_currentSpeakerId < names.size())
+                   ? names.at(m_currentSpeakerId) : names.first();
+    m_btnSpeaker->setToolTip(tr("Speaker: %1 (click to change)").arg(name));
 }
 
 void MainWindow::onTtsStateChanged(int state)
 {
-    if (!m_btnPlay || !m_btnPause || !m_btnStop)
+    if (!m_btnPlay || !m_btnStop)
         return;
     bool available = m_ttsEngine && m_ttsEngine->isAvailable();
-    m_btnPlay->setEnabled(available);
-    m_btnPause->setEnabled(available && (state == 1));   // Speaking
-    m_btnStop->setEnabled(available && (state == 1 || state == 2 || state == 4)); // Speaking, Paused, or Loading
+    bool speaking = (state == TtsEngine::Speaking);
+    bool paused = (state == TtsEngine::Paused);
+    bool loading = (state == TtsEngine::Loading);
+
+    // Update play button icon via objectName (play vs pause)
+    if (speaking || paused)
+        m_btnPlay->setObjectName("btnTtsPause");
+    else
+        m_btnPlay->setObjectName("btnTtsPlay");
+    m_btnPlay->update();
+
+    m_btnPlay->setEnabled(available && !loading);
+    m_btnStop->setEnabled(available && (speaking || paused || loading)); // Speaking, Paused, or Loading
+    if (m_btnSpeaker)
+        m_btnSpeaker->setEnabled(available && !speaking && !loading);
 }
 
 void MainWindow::registerGlobalHotkey()

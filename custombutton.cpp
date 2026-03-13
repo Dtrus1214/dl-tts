@@ -55,8 +55,9 @@ void CustomButton::paintEvent(QPaintEvent *event)
         r = height() / 2;
     } else if (objectName() == QLatin1String("btnTtsPlay") ||
                objectName() == QLatin1String("btnTtsPause") ||
-               objectName() == QLatin1String("btnTtsStop")) {
-        r = height() / 2; // round TTS controls
+               objectName() == QLatin1String("btnTtsStop")  ||
+               objectName() == QLatin1String("btnSpeaker")) {
+        r = height() / 2; // round controls
     }
     QRect rect = this->rect().adjusted(1, 1, -1, -1);
     QPainterPath path;
@@ -143,6 +144,36 @@ void CustomButton::paintEvent(QPaintEvent *event)
             p.setBrush(fg);
             p.setPen(Qt::NoPen);
             p.drawRect(r);
+        } else if (name == QLatin1String("btnSpeaker")) {
+            // Draw simple speaker icon with waves
+            QRectF r = rect.adjusted(rect.width() * 0.28, rect.height() * 0.24,
+                                     -rect.width() * 0.28, -rect.height() * 0.24);
+            // Speaker body (triangle)
+            QPainterPath body;
+            QPointF b1(r.left(), r.center().y());
+            QPointF b2(r.left() + r.width() * 0.35, r.top());
+            QPointF b3(r.left() + r.width() * 0.35, r.bottom());
+            body.moveTo(b1);
+            body.lineTo(b2);
+            body.lineTo(b3);
+            body.closeSubpath();
+            // Waves
+            QPainterPath waves;
+            qreal cx = r.left() + r.width() * 0.55;
+            qreal cy = r.center().y();
+            qreal radius1 = r.width() * 0.28;
+            qreal radius2 = r.width() * 0.42;
+            QRectF arcRect1(cx - radius1, cy - radius1, radius1 * 2, radius1 * 2);
+            QRectF arcRect2(cx - radius2, cy - radius2, radius2 * 2, radius2 * 2);
+            waves.arcMoveTo(arcRect1, -40);
+            waves.arcTo(arcRect1, -40, 80);
+            waves.arcMoveTo(arcRect2, -40);
+            waves.arcTo(arcRect2, -40, 80);
+
+            p.setBrush(fg);
+            p.setPen(QPen(fg, 1.4));
+            p.drawPath(body);
+            p.drawPath(waves);
         }
     } else {
         QFont f = font();

@@ -48,9 +48,10 @@ protected:
 private slots:
     void showClipboardText();
     void onTtsPlay();
-    void onTtsPause();
     void onTtsStop();
     void onTtsStateChanged(int state);
+    void onSpeakerButtonClicked();
+    void onSpeakerSelected(QAction *action);
     void playClipboardSelection();
     void toggleWindowVisibility();
     void quitFromTray();
@@ -67,6 +68,8 @@ private:
     void unregisterGlobalHotkey();
     void simulateCopy();
     bool isInTitleBar(const QPoint &globalPos) const;
+    void setupSpeakerMenu();
+    void updateSpeakerToolTip();
 
     QWidget *m_centralWidget = nullptr;
     QWidget *m_titleBar = nullptr;
@@ -76,8 +79,10 @@ private:
 
     TtsEngine *m_ttsEngine = nullptr;
     CustomButton *m_btnPlay = nullptr;
-    CustomButton *m_btnPause = nullptr;
     CustomButton *m_btnStop = nullptr;
+    CustomButton *m_btnSpeaker = nullptr;
+    QMenu *m_speakerMenu = nullptr;
+    int m_currentSpeakerId = 0;
 
     QPoint m_dragPosition;
     bool m_dragging = false;
