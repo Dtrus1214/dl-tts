@@ -53,8 +53,6 @@ MainWindow::MainWindow(QWidget *parent)
 {
     setupUiDynamic();
     setupWindowFrame();
-
-    connect(m_btnGetSelection, &QPushButton::clicked, this, &MainWindow::onGetSelection);
     connect(m_btnClose, &QPushButton::clicked, this, &QWidget::hide);
 
     m_ttsEngine = new TtsEngine(this);
@@ -120,39 +118,17 @@ void MainWindow::setupUiDynamic()
     contentLayout->setContentsMargins(CONTENT_PADDING, 12, CONTENT_PADDING, CONTENT_PADDING);
     contentLayout->setSpacing(10);
 
-    m_labelHint = new QLabel(
-        tr("Select text in any app (Notepad, browser…), then press Ctrl+Shift+S or click below."),
-        content);
-    m_labelHint->setObjectName("labelHint");
-    m_labelHint->setWordWrap(true);
-    m_labelHint->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-    contentLayout->addWidget(m_labelHint);
-
-    m_btnGetSelection = new CustomButton(tr("Get selection (Ctrl+Shift+S)"), CustomButton::Primary, content);
-    m_btnGetSelection->setObjectName("btnGetSelection");
-    m_btnGetSelection->setMinimumHeight(36);
-    contentLayout->addWidget(m_btnGetSelection);
-
-    m_labelSelected = new QLabel(tr("Selected text:"), content);
-    m_labelSelected->setObjectName("labelSelected");
-    contentLayout->addWidget(m_labelSelected);
-
-    m_textSelected = new QPlainTextEdit(content);
-    m_textSelected->setObjectName("textSelected");
-    m_textSelected->setReadOnly(true);
-    m_textSelected->setMaximumBlockCount(100);
-    m_textSelected->setPlaceholderText(tr("(none yet)"));
-    m_textSelected->setMinimumHeight(60);
-    contentLayout->addWidget(m_textSelected);
-
     QHBoxLayout *ttsLayout = new QHBoxLayout();
     ttsLayout->setSpacing(8);
-    m_btnPlay = new CustomButton(tr("Play"), CustomButton::Primary, content);
+    m_btnPlay = new CustomButton(CustomButton::Primary, content);
     m_btnPlay->setObjectName("btnTtsPlay");
-    m_btnPause = new CustomButton(tr("Pause"), CustomButton::Secondary, content);
+    m_btnPlay->setFixedSize(32, 32);
+    m_btnPause = new CustomButton(CustomButton::Secondary, content);
     m_btnPause->setObjectName("btnTtsPause");
-    m_btnStop = new CustomButton(tr("Stop"), CustomButton::Secondary, content);
+    m_btnPause->setFixedSize(32, 32);
+    m_btnStop = new CustomButton(CustomButton::Secondary, content);
     m_btnStop->setObjectName("btnTtsStop");
+    m_btnStop->setFixedSize(32, 32);
     ttsLayout->addWidget(m_btnPlay);
     ttsLayout->addWidget(m_btnPause);
     ttsLayout->addWidget(m_btnStop);
@@ -167,14 +143,14 @@ void MainWindow::setupUiDynamic()
 
 void MainWindow::setupWindowFrame()
 {
-    setWindowTitle(tr("Selection"));
+    setWindowTitle(tr("CrystalTts"));
     setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
     setAttribute(Qt::WA_TranslucentBackground); // so drop shadow is visible
 
-    const int w = 380;
-    const int h = 300;
+    const int w = 320;
+    const int h = 150;
     setFixedSize(w, h);
-    setMinimumSize(340, 240);
+    setMinimumSize(w, h);
 
     // Production-style palette: dark theme with clear hierarchy
     const char *sheet = R"(
@@ -182,28 +158,24 @@ void MainWindow::setupWindowFrame()
             background-color: transparent;
         }
         QWidget#centralWidget {
-            background-color: #252526;
+            background-color: rgba(22, 22, 24, 220);
             border: 1px solid #3c3c3c;
             border-radius: %1px;
         }
         QWidget#titleBar {
-            background-color: #2d2d30;
+            background-color: rgba(32, 32, 36, 235);
             border-top-left-radius: %1px;
             border-top-right-radius: %1px;
         }
         QWidget#content {
-            background-color: #252526;
+            background-color: rgba(22, 22, 24, 220);
             border-bottom-left-radius: %1px;
             border-bottom-right-radius: %1px;
         }
         QLabel#labelTitle {
-            color: #e0e0e0;
+            color: #f5f5f5;
             font-size: 13px;
             font-weight: 600;
-        }
-        QLabel#labelHint, QLabel#labelSelected {
-            color: #cccccc;
-            font-size: 12px;
         }
         QLabel#labelStatus {
             color: #858585;
@@ -325,6 +297,7 @@ bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, long *r
     if (eventType == "windows_generic_MSG" || eventType == "windows_dispatcher_MSG") {
         MSG *msg = static_cast<MSG *>(message);
         if (msg->message == WM_HOTKEY && msg->wParam == static_cast<WPARAM>(HOTKEY_ID)) {
+            m_playAfterCopy = false;
             m_foregroundAtHotkey = GetForegroundWindow();
             QTimer::singleShot(20, this, &MainWindow::doCopyFromForeground);
             *result = 0;
@@ -351,27 +324,13 @@ void MainWindow::doCopyFromForeground()
     }
     m_foregroundAtHotkey = 0;
     simulateCopy();
-    QTimer::singleShot(150, this, &MainWindow::showClipboardText);
+    if (m_playAfterCopy) {
+        QTimer::singleShot(150, this, &MainWindow::playClipboardSelection);
+    } else {
+        QTimer::singleShot(150, this, &MainWindow::showClipboardText);
+    }
 }
 #endif
-
-void MainWindow::onGetSelection()
-{
-#if defined(Q_OS_WIN)
-    HWND current = reinterpret_cast<HWND>(winId());
-    HWND fg = GetForegroundWindow();
-    if (fg == current && m_lastKnownForeground && IsWindow(m_lastKnownForeground))
-        m_foregroundAtHotkey = m_lastKnownForeground;
-    else
-        m_foregroundAtHotkey = fg;
-    QTimer::singleShot(20, this, &MainWindow::doCopyFromForeground);
-#elif defined(Q_OS_UNIX) && !defined(Q_OS_MAC)
-    simulateCopy();
-    QTimer::singleShot(150, this, &MainWindow::showClipboardText);
-#else
-    showClipboardText();
-#endif
-}
 
 #if defined(Q_OS_WIN)
 void MainWindow::updateLastForegroundWindow()
@@ -387,27 +346,41 @@ void MainWindow::showClipboardText()
 {
     QString text = QApplication::clipboard()->text(QClipboard::Clipboard).trimmed();
     int n = text.length();
-    m_textSelected->setPlainText(text);
-    if (text.isEmpty()) {
-        m_textSelected->setPlaceholderText(tr("(No text — select something and try again)"));
+    if (!m_labelStatus)
+        return;
+    if (text.isEmpty())
         m_labelStatus->setText(tr("Last: 0 characters (no selection copied?)"));
-    } else {
-        m_textSelected->setPlaceholderText(QString());
+    else
         m_labelStatus->setText(tr("Last: %1 character(s) from clipboard").arg(n));
-    }
 }
 
 void MainWindow::onTtsPlay()
 {
     if (!m_ttsEngine || !m_ttsEngine->isAvailable())
         return;
-    QString text = m_textSelected->toPlainText().trimmed();
-    if (text.isEmpty())
-        return;
-    if (m_ttsEngine->state() == 2) // Paused
+
+    // If already paused, just resume without re-copying
+    if (m_ttsEngine->state() == TtsEngine::Paused) {
         m_ttsEngine->resume();
+        return;
+    }
+
+#if defined(Q_OS_WIN)
+    HWND current = reinterpret_cast<HWND>(winId());
+    HWND fg = GetForegroundWindow();
+    if (fg == current && m_lastKnownForeground && IsWindow(m_lastKnownForeground))
+        m_foregroundAtHotkey = m_lastKnownForeground;
     else
-        m_ttsEngine->speak(text);
+        m_foregroundAtHotkey = fg;
+    m_playAfterCopy = true;
+    QTimer::singleShot(20, this, &MainWindow::doCopyFromForeground);
+#elif defined(Q_OS_UNIX) && !defined(Q_OS_MAC)
+    m_playAfterCopy = true;
+    simulateCopy();
+    QTimer::singleShot(150, this, &MainWindow::playClipboardSelection);
+#else
+    playClipboardSelection();
+#endif
 }
 
 void MainWindow::onTtsPause()
@@ -420,6 +393,21 @@ void MainWindow::onTtsStop()
 {
     if (m_ttsEngine && m_ttsEngine->isAvailable())
         m_ttsEngine->stop();
+}
+
+void MainWindow::playClipboardSelection()
+{
+    if (!m_ttsEngine || !m_ttsEngine->isAvailable())
+        return;
+
+    QString text = QApplication::clipboard()->text(QClipboard::Clipboard).trimmed();
+    if (text.isEmpty())
+        return;
+
+    if (m_ttsEngine->state() == TtsEngine::Paused)
+        m_ttsEngine->resume();
+    else
+        m_ttsEngine->speak(text);
 }
 
 void MainWindow::onTtsStateChanged(int state)

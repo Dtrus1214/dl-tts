@@ -50,7 +50,14 @@ void CustomButton::paintEvent(QPaintEvent *event)
     p.setRenderHint(QPainter::Antialiasing);
     p.setRenderHint(QPainter::SmoothPixmapTransform);
 
-    const int r = (m_role == TitleBar) ? height() / 2 : 6;
+    int r = 6;
+    if (m_role == TitleBar) {
+        r = height() / 2;
+    } else if (objectName() == QLatin1String("btnTtsPlay") ||
+               objectName() == QLatin1String("btnTtsPause") ||
+               objectName() == QLatin1String("btnTtsStop")) {
+        r = height() / 2; // round TTS controls
+    }
     QRect rect = this->rect().adjusted(1, 1, -1, -1);
     QPainterPath path;
     path.addRoundedRect(rect, r, r);
@@ -94,13 +101,49 @@ void CustomButton::paintEvent(QPaintEvent *event)
 
     p.setPen(fg);
     p.setBrush(Qt::NoBrush);
-    if (m_role == TitleBar && text().isEmpty()) {
-        // Draw × for close
-        QFont f = font();
-        f.setPixelSize(14);
-        f.setWeight(QFont::DemiBold);
-        p.setFont(f);
-        p.drawText(rect, Qt::AlignCenter, QStringLiteral("×"));
+    if (text().isEmpty()) {
+        const QString name = objectName();
+        if (m_role == TitleBar) {
+            // Draw × for close
+            QFont f = font();
+            f.setPixelSize(14);
+            f.setWeight(QFont::DemiBold);
+            p.setFont(f);
+            p.drawText(rect, Qt::AlignCenter, QStringLiteral("×"));
+        } else if (name == QLatin1String("btnTtsPlay")) {
+            // Draw play triangle
+            QRectF r = rect.adjusted(rect.width() * 0.28, rect.height() * 0.22,
+                                     -rect.width() * 0.28, -rect.height() * 0.22);
+            QPainterPath tri;
+            QPointF p1(r.left(), r.top());
+            QPointF p2(r.left(), r.bottom());
+            QPointF p3(r.right(), (r.top() + r.bottom()) / 2.0);
+            tri.moveTo(p1);
+            tri.lineTo(p2);
+            tri.lineTo(p3);
+            tri.closeSubpath();
+            p.setBrush(fg);
+            p.setPen(Qt::NoPen);
+            p.drawPath(tri);
+        } else if (name == QLatin1String("btnTtsPause")) {
+            // Draw pause (two vertical bars)
+            QRectF r = rect.adjusted(rect.width() * 0.25, rect.height() * 0.22,
+                                     -rect.width() * 0.25, -rect.height() * 0.22);
+            qreal w = r.width() / 3.0;
+            QRectF leftBar(r.left(), r.top(), w, r.height());
+            QRectF rightBar(r.right() - w, r.top(), w, r.height());
+            p.setBrush(fg);
+            p.setPen(Qt::NoPen);
+            p.drawRect(leftBar);
+            p.drawRect(rightBar);
+        } else if (name == QLatin1String("btnTtsStop")) {
+            // Draw stop square
+            QRectF r = rect.adjusted(rect.width() * 0.25, rect.height() * 0.25,
+                                     -rect.width() * 0.25, -rect.height() * 0.25);
+            p.setBrush(fg);
+            p.setPen(Qt::NoPen);
+            p.drawRect(r);
+        }
     } else {
         QFont f = font();
         f.setPixelSize(13);

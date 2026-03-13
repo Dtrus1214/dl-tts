@@ -46,12 +46,12 @@ protected:
 #endif
 
 private slots:
-    void onGetSelection();
     void showClipboardText();
     void onTtsPlay();
     void onTtsPause();
     void onTtsStop();
     void onTtsStateChanged(int state);
+    void playClipboardSelection();
     void toggleWindowVisibility();
     void quitFromTray();
 #if defined(Q_OS_WIN)
@@ -72,10 +72,6 @@ private:
     QWidget *m_titleBar = nullptr;
     QLabel *m_labelTitle = nullptr;
     CustomButton *m_btnClose = nullptr;
-    QLabel *m_labelHint = nullptr;
-    CustomButton *m_btnGetSelection = nullptr;
-    QLabel *m_labelSelected = nullptr;
-    QPlainTextEdit *m_textSelected = nullptr;
     QLabel *m_labelStatus = nullptr;
 
     TtsEngine *m_ttsEngine = nullptr;
@@ -91,6 +87,7 @@ private:
     QAction *m_showHideAction = nullptr;
 
 #if defined(Q_OS_WIN)
+    bool m_playAfterCopy = false;
     static const int HOTKEY_ID = 1;
     bool m_hotkeyRegistered = false;
     HWND m_foregroundAtHotkey = 0;
