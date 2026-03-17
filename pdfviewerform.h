@@ -4,6 +4,10 @@
 #include <QWidget>
 #include <QString>
 
+#ifdef HAVE_POPPLER
+#include <poppler/qt5/poppler-qt5.h>
+#endif
+
 QT_BEGIN_NAMESPACE
 class QPushButton;
 class QScrollArea;
@@ -45,6 +49,10 @@ private:
     QVBoxLayout *m_pagesLayout = nullptr;
     QString m_currentPdfPath;
     QString m_extractedText;
+
+#ifdef HAVE_POPPLER
+    Poppler::Document *m_doc = nullptr;
+#endif
 };
 
 #endif // PDFVIEWERFORM_H
