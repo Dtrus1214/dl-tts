@@ -49,6 +49,9 @@
     <ClCompile Include="pdfviewerform.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="settingsdialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="tts\ttsengine.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -61,6 +64,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="pdfviewerform.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="settingsdialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="tts\ttsengine.h">
@@ -129,6 +135,6 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="C:\Work\dl-tts\CrystalTts_resource.rc" />
+    <ResourceCompile Include=".\CrystalTts_resource.rc" />
   </ItemGroup>
 </Project>

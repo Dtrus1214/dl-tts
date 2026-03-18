@@ -10,6 +10,7 @@
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
+    a.setOrganizationName(QStringLiteral("CrystalTts"));
     a.setApplicationName(QStringLiteral("CrystalTts"));
     a.setApplicationDisplayName(QStringLiteral("CrystalTts"));
     a.setWindowIcon(QIcon(QStringLiteral(":/icons/app.svg")));

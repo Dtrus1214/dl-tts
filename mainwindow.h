@@ -27,6 +27,7 @@ QT_END_NAMESPACE
 class CustomButton;
 class TtsEngine;
 class PdfViewerForm;
+class SettingsDialog;
 
 class MainWindow : public QMainWindow
 {
@@ -58,6 +59,7 @@ private slots:
     void playClipboardSelection();
     void toggleWindowVisibility();
     void openPdfViewer();
+    void openSettingsDialog();
     void quitFromTray();
 #if defined(Q_OS_WIN)
     void doCopyFromForeground();
@@ -68,6 +70,7 @@ private:
     void setupUiDynamic();
     void setupWindowFrame();
     void setupTrayIcon();
+    void loadAndApplySettings();
     void registerGlobalHotkey();
     void unregisterGlobalHotkey();
     void simulateCopy();
@@ -79,6 +82,7 @@ private:
     QWidget *m_titleBar = nullptr;
     QLabel *m_labelTitle = nullptr;
     CustomButton *m_btnClose = nullptr;
+    CustomButton *m_btnSettings = nullptr;
     QLabel *m_labelStatus = nullptr;
 
     TtsEngine *m_ttsEngine = nullptr;

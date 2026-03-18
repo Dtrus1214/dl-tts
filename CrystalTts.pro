@@ -37,12 +37,14 @@ SOURCES += \
     main.cpp \
     mainwindow.cpp \
     custombutton.cpp \
+    settingsdialog.cpp \
     tts/ttsengine.cpp \
     pdfviewerform.cpp
 
 HEADERS += \
     mainwindow.h \
     custombutton.h \
+    settingsdialog.h \
     tts/ttsengine.h \
     pdfviewerform.h
 

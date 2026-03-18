@@ -17,7 +17,7 @@
 #include <cstring>
 
 static QString runSynthesis(const QString &modelPath, const QString &tokensPath,
-                            const QString &dataDir, const QString &text)
+                            const QString &dataDir, const QString &text, float lengthScale)
 {
     if (modelPath.isEmpty() || tokensPath.isEmpty() || dataDir.isEmpty() || text.trimmed().isEmpty())
         return QString();
@@ -34,7 +34,7 @@ static QString runSynthesis(const QString &modelPath, const QString &tokensPath,
     config.model.vits.data_dir = dataDirUtf8.constData();
     config.model.vits.noise_scale = 0.667f;
     config.model.vits.noise_scale_w = 0.8f;
-    config.model.vits.length_scale = 1.0f;
+    config.model.vits.length_scale = lengthScale;
     config.model.num_threads = 1;
     config.model.debug = 0;
 
@@ -71,7 +71,7 @@ static QString runSynthesis(const QString &modelPath, const QString &tokensPath,
 
 static bool runSynthesisToPath(const QString &modelPath, const QString &tokensPath,
                                const QString &dataDir, const QString &text,
-                               const QString &wavPath)
+                               const QString &wavPath, float lengthScale)
 {
     if (wavPath.trimmed().isEmpty())
         return false;
@@ -91,7 +91,7 @@ static bool runSynthesisToPath(const QString &modelPath, const QString &tokensPa
     config.model.vits.data_dir = dataDirUtf8.constData();
     config.model.vits.noise_scale = 0.667f;
     config.model.vits.noise_scale_w = 0.8f;
-    config.model.vits.length_scale = 1.0f;
+    config.model.vits.length_scale = lengthScale;
     config.model.num_threads = 1;
     config.model.debug = 0;
 
@@ -115,7 +115,8 @@ static bool runSynthesisToPath(const QString &modelPath, const QString &tokensPa
 
 static bool runSynthesisChunksToPath(const QString &modelPath, const QString &tokensPath,
                                      const QString &dataDir, const QStringList &chunks,
-                                     const QString &wavPath, int silenceMsBetweenChunks)
+                                     const QString &wavPath, int silenceMsBetweenChunks,
+                                     float lengthScale)
 {
     if (wavPath.trimmed().isEmpty())
         return false;
@@ -143,7 +144,7 @@ static bool runSynthesisChunksToPath(const QString &modelPath, const QString &to
     config.model.vits.data_dir = dataDirUtf8.constData();
     config.model.vits.noise_scale = 0.667f;
     config.model.vits.noise_scale_w = 0.8f;
-    config.model.vits.length_scale = 1.0f;
+    config.model.vits.length_scale = lengthScale;
     config.model.num_threads = 1;
     config.model.debug = 0;
 
@@ -258,9 +259,20 @@ QString TtsEngine::synthesizeToWavPath(const QString &text, const QString &desir
     QString tokens = m_tokensPath.isEmpty() ? defaultTokensPath() : m_tokensPath;
     QString dataDir = m_dataDir.isEmpty() ? defaultDataDir() : m_dataDir;
 
-    if (runSynthesisToPath(model, tokens, dataDir, text, out))
+    const float lengthScale = 100.0f / qBound(50, m_speedPercent, 200);
+    if (runSynthesisToPath(model, tokens, dataDir, text, out, lengthScale))
         return out;
     return QString();
+}
+
+void TtsEngine::setSpeedPercent(int percent)
+{
+    m_speedPercent = qBound(50, percent, 200);
+}
+
+int TtsEngine::speedPercent() const
+{
+    return m_speedPercent;
 }
 
 bool TtsEngine::initialize()
@@ -303,10 +315,11 @@ void TtsEngine::speak(const QString &text)
     QString model = m_modelPath.isEmpty() ? defaultModelPath() : m_modelPath;
     QString tokens = m_tokensPath.isEmpty() ? defaultTokensPath() : m_tokensPath;
     QString dataDir = m_dataDir.isEmpty() ? defaultDataDir() : m_dataDir;
+    const float lengthScale = 100.0f / qBound(50, m_speedPercent, 200);
 
     setState(Loading);
 
-    QFuture<QString> future = QtConcurrent::run(runSynthesis, model, tokens, dataDir, t);
+    QFuture<QString> future = QtConcurrent::run(runSynthesis, model, tokens, dataDir, t, lengthScale);
     QFutureWatcher<QString> *watcher = new QFutureWatcher<QString>(this);
     connect(watcher, &QFutureWatcher<QString>::finished, this, [this, watcher]() {
         QString path = watcher->result();
@@ -361,7 +374,8 @@ void TtsEngine::exportWavChunks(const QStringList &chunks, const QString &wavPat
         return;
     }
 
-    QFuture<QString> future = QtConcurrent::run([this, chunks, desired, silenceMsBetweenChunks]() {
+    const int speedPercent = qBound(50, m_speedPercent, 200);
+    QFuture<QString> future = QtConcurrent::run([this, chunks, desired, silenceMsBetweenChunks, speedPercent]() {
         QString out = desired;
         if (!out.endsWith(QLatin1String(".wav"), Qt::CaseInsensitive))
             out += QLatin1String(".wav");
@@ -369,8 +383,9 @@ void TtsEngine::exportWavChunks(const QStringList &chunks, const QString &wavPat
         const QString model = m_modelPath.isEmpty() ? defaultModelPath() : m_modelPath;
         const QString tokens = m_tokensPath.isEmpty() ? defaultTokensPath() : m_tokensPath;
         const QString dataDir = m_dataDir.isEmpty() ? defaultDataDir() : m_dataDir;
+        const float lengthScale = 100.0f / speedPercent;
 
-        if (runSynthesisChunksToPath(model, tokens, dataDir, chunks, out, silenceMsBetweenChunks))
+        if (runSynthesisChunksToPath(model, tokens, dataDir, chunks, out, silenceMsBetweenChunks, lengthScale))
             return out;
         return QString();
     });

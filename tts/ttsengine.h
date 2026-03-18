@@ -35,6 +35,10 @@ public:
 
     bool isAvailable() const;
 
+    /** Set TTS speed as a percent (50..200). 100 = default. */
+    void setSpeedPercent(int percent);
+    int speedPercent() const;
+
     void speak(const QString &text);
     void pause();
     void resume();
@@ -72,6 +76,7 @@ private:
     QString m_currentWavPath;
     int m_state = Ready;
     bool m_available = false;
+    int m_speedPercent = 100;
 };
 
 #endif // TTSENGINE_H

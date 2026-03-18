@@ -1,6 +1,10 @@
 <RCC>
     <qresource prefix="/">
         <file>icons/app.svg</file>
+        <file>icons/settings.svg</file>
+        <file>icons/chevron-down.svg</file>
+        <file>icons/radio-off.svg</file>
+        <file>icons/radio-on.svg</file>
         <file>icons/play.svg</file>
         <file>icons/pause.svg</file>
         <file>icons/stop.svg</file>

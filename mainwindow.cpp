@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "custombutton.h"
+#include "settingsdialog.h"
 #include "tts/ttsengine.h"
 #include "pdfviewerform.h"
 
@@ -25,6 +26,7 @@
 #include <QStyle>
 #include <QEvent>
 #include <QIcon>
+#include <QSettings>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -60,6 +62,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_btnClose, &QPushButton::clicked, this, &QWidget::hide);
 
     m_ttsEngine = new TtsEngine(this);
+    loadAndApplySettings();
     m_ttsEngine->initialize();
     connect(m_ttsEngine, &TtsEngine::stateChanged, this, &MainWindow::onTtsStateChanged);
     connect(m_btnPlay, &QPushButton::clicked, this, &MainWindow::onTtsPlay);
@@ -107,6 +110,15 @@ void MainWindow::setupUiDynamic()
     titleLayout->addWidget(m_labelTitle);
 
     titleLayout->addStretch();
+
+    m_btnSettings = new CustomButton(CustomButton::TitleBar, m_titleBar);
+    m_btnSettings->setObjectName("btnSettings");
+    m_btnSettings->setText(QString());
+    m_btnSettings->setFixedSize(28, 28);
+    m_btnSettings->setIconPath(QStringLiteral(":/icons/settings.svg"));
+    m_btnSettings->setToolTip(tr("Settings"));
+    titleLayout->addWidget(m_btnSettings, 0, Qt::AlignVCenter);
+    connect(m_btnSettings, &QPushButton::clicked, this, &MainWindow::openSettingsDialog);
 
     m_btnClose = new CustomButton(CustomButton::TitleBar, m_titleBar);
     m_btnClose->setObjectName("btnClose");
@@ -247,6 +259,7 @@ void MainWindow::setupTrayIcon()
 {
     m_trayMenu = new QMenu(this);
     m_showHideAction = m_trayMenu->addAction(tr("Show CrystalTts"), this, &MainWindow::toggleWindowVisibility);
+    m_trayMenu->addAction(tr("Settings..."), this, &MainWindow::openSettingsDialog);
     m_trayMenu->addAction(tr("Quit"), this, &MainWindow::quitFromTray);
 
     m_trayIcon = new QSystemTrayIcon(this);
@@ -277,6 +290,41 @@ void MainWindow::quitFromTray()
 {
     m_trayIcon->hide();
     qApp->quit();
+}
+
+void MainWindow::openSettingsDialog()
+{
+    SettingsDialog dlg(this);
+    connect(&dlg, &SettingsDialog::settingsApplied, this, &MainWindow::loadAndApplySettings);
+    dlg.exec();
+}
+
+void MainWindow::loadAndApplySettings()
+{
+    QSettings s;
+    s.beginGroup(QStringLiteral("settings"));
+
+    m_currentSpeakerId = s.value(QStringLiteral("speakerId"), m_currentSpeakerId).toInt();
+    if (m_currentSpeakerId < 0)
+        m_currentSpeakerId = 0;
+
+    const int speedPct = s.value(QStringLiteral("ttsSpeedPercent"), 100).toInt();
+    if (m_ttsEngine)
+        m_ttsEngine->setSpeedPercent(speedPct);
+
+    if (m_speakerMenu) {
+        for (QAction *a : m_speakerMenu->actions()) {
+            if (!a || !a->data().isValid())
+                continue;
+            if (a->data().toInt() == m_currentSpeakerId) {
+                a->setChecked(true);
+                break;
+            }
+        }
+    }
+    updateSpeakerToolTip();
+
+    s.endGroup();
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
@@ -496,6 +544,11 @@ void MainWindow::onSpeakerSelected(QAction *action)
     m_currentSpeakerId = action->data().toInt();
     action->setChecked(true);
     updateSpeakerToolTip();
+    QSettings s;
+    s.beginGroup(QStringLiteral("settings"));
+    s.setValue(QStringLiteral("speakerId"), m_currentSpeakerId);
+    s.endGroup();
+    s.sync();
     // TODO: pass m_currentSpeakerId to TtsEngine when it supports speaker selection
 }
 
