@@ -1,5 +1,7 @@
 #include "settingsdialog.h"
 
+#include "custombutton.h"
+
 #include <QListWidget>
 #include <QStackedWidget>
 #include <QWidget>
@@ -19,6 +21,7 @@
 #include <QSettings>
 #include <QMessageBox>
 #include <QStyledItemDelegate>
+#include <QMouseEvent>
 
 static constexpr const char *kSettingsGroup = "settings";
 static constexpr const char *kSpeakerIdKey = "speakerId";
@@ -29,6 +32,8 @@ static constexpr const char *kRepeatModeKey = "repeatMode";
 static constexpr const char *kPauseSentenceKey = "pauseSentenceMs";
 static constexpr const char *kPauseParagraphKey = "pauseParagraphMs";
 static constexpr const char *kLicenseKey = "licenseKey";
+
+static const int SETTINGS_TITLE_BAR_HEIGHT = 42;
 
 class FixedHeightItemDelegate final : public QStyledItemDelegate
 {
@@ -83,23 +88,123 @@ SettingsDialog::SettingsDialog(QWidget *parent)
 {
     setWindowTitle(tr("Settings"));
     setModal(true);
-    resize(600, 400);
+    resize(600, 440);
+    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint);
+    setAttribute(Qt::WA_TranslucentBackground, true);
 
     buildUi();
     loadFromSettings();
 }
 
+bool SettingsDialog::isInTitleBar(const QPoint &globalPos) const
+{
+    if (!m_titleBar)
+        return false;
+    const QPoint local = m_titleBar->mapFromGlobal(globalPos);
+    return QRect(QPoint(0, 0), m_titleBar->size()).contains(local);
+}
+
+void SettingsDialog::mousePressEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton && isInTitleBar(event->globalPos())) {
+        m_dragPosition = event->globalPos() - frameGeometry().topLeft();
+        m_dragging = true;
+        event->accept();
+        return;
+    }
+    QDialog::mousePressEvent(event);
+}
+
+void SettingsDialog::mouseMoveEvent(QMouseEvent *event)
+{
+    if (m_dragging && (event->buttons() & Qt::LeftButton)) {
+        move(event->globalPos() - m_dragPosition);
+        event->accept();
+        return;
+    }
+    QDialog::mouseMoveEvent(event);
+}
+
+void SettingsDialog::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton)
+        m_dragging = false;
+    QDialog::mouseReleaseEvent(event);
+}
+
 void SettingsDialog::buildUi()
 {
-    QVBoxLayout *root = new QVBoxLayout(this);
-    root->setContentsMargins(14, 14, 14, 14);
-    root->setSpacing(12);
+    // Outer layout: transparent window + rounded inner frame
+    QVBoxLayout *outer = new QVBoxLayout(this);
+    outer->setContentsMargins(10, 10, 10, 10);
+    outer->setSpacing(0);
+
+    QWidget *frame = new QWidget(this);
+    frame->setObjectName(QStringLiteral("dialogFrame"));
+    outer->addWidget(frame);
+
+    QVBoxLayout *root = new QVBoxLayout(frame);
+    // No padding here so the title bar can be flush to the frame.
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
+
+    // ---- Title bar (draggable) ----
+    m_titleBar = new QWidget(frame);
+    m_titleBar->setObjectName(QStringLiteral("settingsTitleBar"));
+    m_titleBar->setFixedHeight(SETTINGS_TITLE_BAR_HEIGHT);
+    m_titleBar->setCursor(Qt::SizeAllCursor);
+
+    QHBoxLayout *titleLayout = new QHBoxLayout(m_titleBar);
+    titleLayout->setContentsMargins(14, 0, 10, 0);
+    titleLayout->setSpacing(8);
+
+    m_titleLabel = new QLabel(tr("Settings"), m_titleBar);
+    m_titleLabel->setObjectName(QStringLiteral("settingsTitleLabel"));
+    titleLayout->addWidget(m_titleLabel);
+    titleLayout->addStretch(1);
+
+    m_btnClose = new CustomButton(CustomButton::TitleBar, m_titleBar);
+    m_btnClose->setObjectName(QStringLiteral("settingsBtnClose"));
+    m_btnClose->setFixedSize(28, 28);
+    m_btnClose->setText(QString());
+    m_btnClose->setIconPath(QStringLiteral(":/icons/close.svg"));
+    m_btnClose->setToolTip(tr("Close window"));
+    titleLayout->addWidget(m_btnClose, 0, Qt::AlignVCenter);
+    connect(m_btnClose, &QPushButton::clicked, this, &QDialog::reject);
+
+    root->addWidget(m_titleBar);
+
+    // Content container: provides the padding that used to be on `root`.
+    QWidget *contentRoot = new QWidget(frame);
+    contentRoot->setObjectName(QStringLiteral("dialogContent"));
+    QVBoxLayout *contentLayout = new QVBoxLayout(contentRoot);
+    contentLayout->setContentsMargins(14, 12, 14, 14);
+    contentLayout->setSpacing(12);
+    root->addWidget(contentRoot, 1);
 
     // Crystal-style palette to match MainWindow
     setStyleSheet(QStringLiteral(R"(
         QDialog {
-            background-color: #ffffff;
+            background-color: transparent;
             font-size: 13px;
+        }
+        QWidget#dialogFrame {
+            background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                              stop:0 #ffffff,
+                                              stop:1 #f3f9ff);
+            border: 1px solid #d0e4ff;
+            border-radius: 14px;
+        }
+        QWidget#settingsTitleBar {
+            background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                              stop:0 #e4f3ff,
+                                              stop:1 #c0ddff);
+            border-top-left-radius: 14px;
+            border-top-right-radius: 14px;
+        }
+        QLabel#settingsTitleLabel {
+            color: #1f3b5e;
+            font-weight: 600;
         }
 
         QListWidget#settingsNav {
@@ -268,7 +373,7 @@ void SettingsDialog::buildUi()
 
     center->addWidget(m_nav);
     center->addWidget(m_stack, 1);
-    root->addLayout(center, 1);
+    contentLayout->addLayout(center, 1);
 
     connect(m_nav, &QListWidget::currentRowChanged, m_stack, &QStackedWidget::setCurrentIndex);
 
@@ -509,7 +614,7 @@ void SettingsDialog::buildUi()
 
     QDialogButtonBox *buttons = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply, this);
-    root->addWidget(buttons);
+    contentLayout->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::accepted, this, &SettingsDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &SettingsDialog::reject);
     connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, this, &SettingsDialog::apply);

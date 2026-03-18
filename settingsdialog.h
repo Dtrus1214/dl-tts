@@ -11,7 +11,10 @@ class QSlider;
 class QLabel;
 class QButtonGroup;
 class QLineEdit;
+class QMouseEvent;
 QT_END_NAMESPACE
+
+class CustomButton;
 
 class SettingsDialog : public QDialog
 {
@@ -19,6 +22,11 @@ class SettingsDialog : public QDialog
 public:
     explicit SettingsDialog(QWidget *parent = nullptr);
     ~SettingsDialog() override = default;
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
 
 signals:
     void settingsApplied();
@@ -33,6 +41,13 @@ private:
     void buildUi();
     void loadFromSettings();
     void saveToSettings() const;
+    bool isInTitleBar(const QPoint &globalPos) const;
+
+    QWidget *m_titleBar = nullptr;
+    QLabel *m_titleLabel = nullptr;
+    CustomButton *m_btnClose = nullptr;
+    QPoint m_dragPosition;
+    bool m_dragging = false;
 
     QListWidget *m_nav = nullptr;
     QStackedWidget *m_stack = nullptr;
