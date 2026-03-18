@@ -22,6 +22,7 @@
 #include <QWindow>
 #include <QEventLoop>
 #include <QTimer>
+#include <QProgressBar>
 #if defined(Q_OS_WIN)
 #include <windows.h>
 #endif
@@ -495,6 +496,23 @@ void PdfViewerForm::applyCrystalStyle()
         QScrollBar::add-line, QScrollBar::sub-line {
             width: 0; height: 0;
         }
+        QProgressBar#pdfLoadProgress {
+            border: 1px solid #d0e4ff;
+            border-radius: 6px;
+            background-color: #e8f2ff;
+            text-align: center;
+            color: #1f3b5e;
+            font-size: 11px;
+            font-weight: 600;
+            min-height: 22px;
+            max-height: 22px;
+        }
+        QProgressBar#pdfLoadProgress::chunk {
+            background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                stop:0 #9ec4f0, stop:1 #6ba3e8);
+            border-radius: 5px;
+            margin: 1px;
+        }
     )";
     setStyleSheet(QString::fromUtf8(sheet).arg(PDF_WINDOW_RADIUS));
 }
@@ -870,6 +888,18 @@ void PdfViewerForm::setupUi()
     toolbarLayout->addStretch();
     contentLayout->addLayout(toolbarLayout);
 
+#ifdef HAVE_POPPLER
+    m_pdfLoadProgress = new QProgressBar(content);
+    m_pdfLoadProgress->setObjectName(QStringLiteral("pdfLoadProgress"));
+    m_pdfLoadProgress->setTextVisible(true);
+    m_pdfLoadProgress->setAlignment(Qt::AlignCenter);
+    m_pdfLoadProgress->setFormat(tr("Loading PDF… %p%"));
+    m_pdfLoadProgress->setRange(0, 100);
+    m_pdfLoadProgress->setValue(0);
+    m_pdfLoadProgress->setVisible(false);
+    contentLayout->addWidget(m_pdfLoadProgress);
+#endif
+
     m_scrollArea = new QScrollArea(content);
     m_scrollArea->setObjectName(QStringLiteral("pdfScrollArea"));
     m_scrollArea->setWidgetResizable(true);
@@ -988,7 +1018,7 @@ double PdfViewerForm::computeFitToWindowDpi() const
     return qBound(48.0, minDpi, 288.0);
 }
 
-void PdfViewerForm::rebuildPdfPageWidgets()
+void PdfViewerForm::rebuildPdfPageWidgets(QProgressBar *progress, int progressStart, int progressEnd)
 {
     if (!m_doc)
         return;
@@ -1002,6 +1032,7 @@ void PdfViewerForm::rebuildPdfPageWidgets()
 
     const int dpi = qBound(36, qRound(m_baseFitDpi * m_zoomFactor), 500);
     const int numPages = m_doc->numPages();
+    const bool showProg = progress && progressEnd > progressStart && numPages > 0;
 
     for (int i = 0; i < numPages; ++i) {
         std::unique_ptr<Poppler::Page> page(m_doc->page(i));
@@ -1027,7 +1058,16 @@ void PdfViewerForm::rebuildPdfPageWidgets()
         PdfPageWidget *pageWidget = new PdfPageWidget(m_doc, i, dpi, dpi, image, frame);
         frameLayout->addWidget(pageWidget);
         m_pagesLayout->addWidget(frame);
+
+        if (showProg) {
+            const int v = progressStart + (progressEnd - progressStart) * (i + 1) / numPages;
+            progress->setValue(v);
+            QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        }
     }
+
+    if (progress && progressEnd > progressStart && numPages <= 0)
+        progress->setValue(progressEnd);
 }
 
 void PdfViewerForm::onZoomIn()
@@ -1074,18 +1114,53 @@ void PdfViewerForm::loadPdf(const QString &path)
     m_extractedText.clear();
     const int numPages = m_doc->numPages();
 
+    auto hideLoadProgress = [this]() {
+        if (m_pdfLoadProgress) {
+            m_pdfLoadProgress->setVisible(false);
+            m_pdfLoadProgress->setRange(0, 100);
+            m_pdfLoadProgress->setValue(0);
+        }
+        if (m_btnOpenPdf)
+            m_btnOpenPdf->setEnabled(true);
+    };
+
+    if (m_btnOpenPdf)
+        m_btnOpenPdf->setEnabled(false);
+    if (m_pdfLoadProgress) {
+        if (numPages <= 0) {
+            m_pdfLoadProgress->setRange(0, 0);
+            m_pdfLoadProgress->setFormat(tr("Loading PDF…"));
+        } else {
+            m_pdfLoadProgress->setRange(0, 2 * numPages + 1);
+            m_pdfLoadProgress->setFormat(tr("Loading PDF… %p%"));
+        }
+        m_pdfLoadProgress->setValue(0);
+        m_pdfLoadProgress->setVisible(true);
+    }
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+
     for (int i = 0; i < numPages; ++i) {
         std::unique_ptr<Poppler::Page> page(m_doc->page(i));
-        if (!page)
-            continue;
-        m_extractedText += page->text(QRectF());
-        m_extractedText += QLatin1String("\n\n");
+        if (page) {
+            m_extractedText += page->text(QRectF());
+            m_extractedText += QLatin1String("\n\n");
+        }
+        if (m_pdfLoadProgress && numPages > 0) {
+            m_pdfLoadProgress->setValue(i + 1);
+            QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        }
     }
     m_extractedText = m_extractedText.trimmed();
 
     m_zoomFactor = 1.0;
+    if (m_pdfLoadProgress && numPages > 0)
+        m_pdfLoadProgress->setValue(numPages + 1);
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+
     m_baseFitDpi = computeFitToWindowDpi();
-    rebuildPdfPageWidgets();
+    rebuildPdfPageWidgets(m_pdfLoadProgress, numPages + 1, 2 * numPages + 1);
+
+    hideLoadProgress();
 
     QTimer::singleShot(0, this, [this]() {
         if (!m_doc || qAbs(m_zoomFactor - 1.0) > 1e-6)

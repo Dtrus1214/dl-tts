@@ -24,6 +24,7 @@ class QHBoxLayout;
 class QMouseEvent;
 class QResizeEvent;
 class QShowEvent;
+class QProgressBar;
 QT_END_NAMESPACE
 
 class CustomButton;
@@ -74,7 +75,7 @@ private:
     QString extractTextFromPdf(const QString &path);
 #ifdef HAVE_POPPLER
     double computeFitToWindowDpi() const;
-    void rebuildPdfPageWidgets();
+    void rebuildPdfPageWidgets(QProgressBar *progress = nullptr, int progressStart = 0, int progressEnd = 0);
 #endif
 
     TtsEngine *m_ttsEngine = nullptr;
@@ -93,6 +94,7 @@ private:
     CustomButton *m_btnZoomIn = nullptr;
     double m_baseFitDpi = 150.0;
     double m_zoomFactor = 1.0;
+    QProgressBar *m_pdfLoadProgress = nullptr;
 #endif
 
     QScrollArea *m_scrollArea = nullptr;
