@@ -22,6 +22,7 @@
 #include <QWindow>
 #include <QEventLoop>
 #include <QTimer>
+#include <QDateTime>
 #include <QProgressBar>
 #if defined(Q_OS_WIN)
 #include <windows.h>
@@ -37,6 +38,11 @@
 #ifdef HAVE_POPPLER
 namespace {
 
+class PdfPageWidget;
+
+static void clearOtherPdfPages(PdfPageWidget *self, QWidget *pagesRoot);
+static void clearAllPdfSelections(QWidget *pagesRoot);
+
 class PdfPageWidget final : public QWidget
 {
 public:
@@ -45,6 +51,7 @@ public:
                   int xRes,
                   int yRes,
                   const QImage &rendered,
+                  QWidget *pagesRoot,
                   QWidget *parent = nullptr)
         : QWidget(parent)
         , m_doc(doc)
@@ -52,6 +59,7 @@ public:
         , m_xRes(xRes)
         , m_yRes(yRes)
         , m_image(rendered)
+        , m_pagesRoot(pagesRoot)
     {
         setFocusPolicy(Qt::StrongFocus);
         setMouseTracking(true);
@@ -64,6 +72,21 @@ public:
     }
 
     QString selectedText() const { return m_selectedText; }
+
+    void fullResetOtherPage()
+    {
+        m_hasSelection = false;
+        m_selecting = false;
+        m_dragStarted = false;
+        m_selectedText.clear();
+        m_selectedPixelRects.clear();
+        m_selStart = QPoint();
+        m_selEnd = QPoint();
+        m_skipNextReleaseUpdate = false;
+        m_clickChainCount = 0;
+        m_lastDoubleClickEventMs = 0;
+        update();
+    }
 
 protected:
     void paintEvent(QPaintEvent *) override
@@ -87,12 +110,75 @@ protected:
         if (e->button() != Qt::LeftButton)
             return;
         setFocus(Qt::MouseFocusReason);
-        m_hasSelection = true;
+
+        clearOtherPdfPages(this, m_pagesRoot);
+
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        const QPoint pos = clampToPage(e->pos());
+
+        /* Triple-click: third press right after a double-click (same area) → line */
+        if (m_lastDoubleClickEventMs > 0
+            && now - m_lastDoubleClickEventMs <= 700
+            && (pos - m_lastDoubleClickPos).manhattanLength() <= 20) {
+            m_lastDoubleClickEventMs = 0;
+            m_clickChainCount = 0;
+            m_selecting = false;
+            m_dragStarted = false;
+            const int idx = hitTestTextBoxIndex(pos);
+            if (idx >= 0) {
+                m_hasSelection = true;
+                selectLineAtIndex(idx);
+                m_skipNextReleaseUpdate = true;
+            } else {
+                m_hasSelection = false;
+                m_selectedText.clear();
+                m_selectedPixelRects.clear();
+            }
+            updateHoverCursor(pos);
+            update();
+            return;
+        }
+
+        /* Three quick single-clicks (no Qt double-click) → line */
+        const qint64 chainMs = 900;
+        if (now - m_lastChainClickMs <= chainMs
+            && (pos - m_lastChainClickPos).manhattanLength() <= 14) {
+            ++m_clickChainCount;
+        } else {
+            m_clickChainCount = 1;
+        }
+        m_lastChainClickMs = now;
+        m_lastChainClickPos = pos;
+
+        if (m_clickChainCount >= 3) {
+            m_clickChainCount = 0;
+            m_lastDoubleClickEventMs = 0;
+            m_selecting = false;
+            m_dragStarted = false;
+            const int idx = hitTestTextBoxIndex(pos);
+            if (idx >= 0) {
+                m_hasSelection = true;
+                selectLineAtIndex(idx);
+                m_skipNextReleaseUpdate = true;
+            } else {
+                m_hasSelection = false;
+                m_selectedText.clear();
+                m_selectedPixelRects.clear();
+            }
+            updateHoverCursor(pos);
+            update();
+            return;
+        }
+
+        m_hasSelection = false;
+        m_selectedText.clear();
+        m_selectedPixelRects.clear();
         m_selecting = true;
-        m_selStart = clampToPage(e->pos());
-        m_selEnd = m_selStart;
-        updateHoverCursor(m_selStart);
-        updateSelectionFromBoxes();
+        m_dragStarted = false;
+        m_pressAnchor = pos;
+        m_selStart = pos;
+        m_selEnd = pos;
+        updateHoverCursor(pos);
         update();
     }
 
@@ -102,6 +188,15 @@ protected:
         if (!m_selecting) {
             updateHoverCursor(pos);
             return;
+        }
+        if (!m_dragStarted) {
+            if ((pos - m_pressAnchor).manhattanLength() >= QApplication::startDragDistance()) {
+                m_dragStarted = true;
+                m_hasSelection = true;
+            } else {
+                update();
+                return;
+            }
         }
         m_selEnd = pos;
         updateSelectionFromBoxes();
@@ -115,12 +210,20 @@ protected:
         if (m_skipNextReleaseUpdate) {
             m_skipNextReleaseUpdate = false;
             m_selecting = false;
+            m_dragStarted = false;
             update();
             return;
         }
         m_selecting = false;
         m_selEnd = clampToPage(e->pos());
-        updateSelectionFromBoxes();
+        if (!m_dragStarted) {
+            m_hasSelection = false;
+            m_selectedText.clear();
+            m_selectedPixelRects.clear();
+        } else {
+            updateSelectionFromBoxes();
+        }
+        m_dragStarted = false;
         update();
     }
 
@@ -128,7 +231,10 @@ protected:
     {
         if (e->button() != Qt::LeftButton)
             return;
+        e->accept();
         setFocus(Qt::MouseFocusReason);
+        m_clickChainCount = 0;
+
         const QPoint pos = clampToPage(e->pos());
         updateHoverCursor(pos);
 
@@ -136,10 +242,13 @@ protected:
         if (idx < 0)
             return;
 
-        m_hasSelection = true;
         m_selecting = false;
+        m_dragStarted = false;
+        m_hasSelection = true;
+        selectWordAtIndex(idx);
         m_skipNextReleaseUpdate = true;
-        selectLineAtIndex(idx);
+        m_lastDoubleClickEventMs = QDateTime::currentMSecsSinceEpoch();
+        m_lastDoubleClickPos = pos;
         update();
     }
 
@@ -172,7 +281,7 @@ protected:
         if (chosen == copyAct) {
             copySelectionToClipboard();
         } else if (chosen == clearAct) {
-            clearSelection();
+            clearAllPdfSelections(m_pagesRoot);
         }
     }
 
@@ -299,6 +408,17 @@ private:
         m_selectedText = parts.join(QLatin1Char(' ')).simplified();
     }
 
+    void selectWordAtIndex(int idx)
+    {
+        if (idx < 0 || idx >= static_cast<int>(m_textBoxes.size()))
+            return;
+        m_selectedText.clear();
+        m_selectedPixelRects.clear();
+        const auto &b = m_textBoxes[static_cast<size_t>(idx)];
+        m_selectedText = b.text.trimmed();
+        m_selectedPixelRects.push_back(pdfPointsToPixelRect(b.pdfRect));
+    }
+
     void selectLineAtIndex(int idx)
     {
         if (idx < 0 || idx >= static_cast<int>(m_textBoxes.size()))
@@ -365,9 +485,18 @@ private:
     int m_xRes = 150;
     int m_yRes = 150;
     QImage m_image;
+    QWidget *m_pagesRoot = nullptr;
 
     std::vector<TextBoxItem> m_textBoxes;
     std::vector<QRect> m_selectedPixelRects;
+
+    qint64 m_lastDoubleClickEventMs = 0;
+    QPoint m_lastDoubleClickPos;
+    qint64 m_lastChainClickMs = 0;
+    QPoint m_lastChainClickPos;
+    int m_clickChainCount = 0;
+    QPoint m_pressAnchor;
+    bool m_dragStarted = false;
 
     bool m_skipNextReleaseUpdate = false;
     bool m_hasSelection = false;
@@ -376,6 +505,28 @@ private:
     QPoint m_selEnd;
     QString m_selectedText;
 };
+
+static void clearOtherPdfPages(PdfPageWidget *self, QWidget *pagesRoot)
+{
+    if (!pagesRoot || !self)
+        return;
+    for (QWidget *cw : pagesRoot->findChildren<QWidget *>()) {
+        auto *pw = dynamic_cast<PdfPageWidget *>(cw);
+        if (pw && pw != self)
+            pw->fullResetOtherPage();
+    }
+}
+
+static void clearAllPdfSelections(QWidget *pagesRoot)
+{
+    if (!pagesRoot)
+        return;
+    for (QWidget *cw : pagesRoot->findChildren<QWidget *>()) {
+        auto *pw = dynamic_cast<PdfPageWidget *>(cw);
+        if (pw)
+            pw->fullResetOtherPage();
+    }
+}
 
 } // namespace
 #endif
@@ -1055,7 +1206,7 @@ void PdfViewerForm::rebuildPdfPageWidgets(QProgressBar *progress, int progressSt
         frameLayout->setContentsMargins(4, 4, 4, 4);
         frameLayout->setSpacing(0);
 
-        PdfPageWidget *pageWidget = new PdfPageWidget(m_doc, i, dpi, dpi, image, frame);
+        PdfPageWidget *pageWidget = new PdfPageWidget(m_doc, i, dpi, dpi, image, m_pagesContainer, frame);
         frameLayout->addWidget(pageWidget);
         m_pagesLayout->addWidget(frame);
 
