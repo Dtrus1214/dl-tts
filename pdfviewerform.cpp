@@ -18,7 +18,10 @@
 #include <QResizeEvent>
 #include <QClipboard>
 #include <QApplication>
+#include <QCursor>
+#include <QGuiApplication>
 #include <QMenu>
+#include <QScreen>
 #include <QWindow>
 #include <QEventLoop>
 #include <QTimer>
@@ -176,6 +179,7 @@ protected:
         m_selecting = true;
         m_dragStarted = false;
         m_pressAnchor = pos;
+        m_anchorTextBoxIndex = hitTestNearestTextBoxIndex(pos);
         m_selStart = pos;
         m_selEnd = pos;
         updateHoverCursor(pos);
@@ -199,7 +203,7 @@ protected:
             }
         }
         m_selEnd = pos;
-        updateSelectionFromBoxes();
+        updateSelectionFromTextRange();
         update();
     }
 
@@ -221,7 +225,7 @@ protected:
             m_selectedText.clear();
             m_selectedPixelRects.clear();
         } else {
-            updateSelectionFromBoxes();
+            updateSelectionFromTextRange();
         }
         m_dragStarted = false;
         update();
@@ -408,6 +412,123 @@ private:
         m_selectedText = parts.join(QLatin1Char(' ')).simplified();
     }
 
+    int hitTestNearestTextBoxIndex(const QPoint &posPx) const
+    {
+        const int direct = hitTestTextBoxIndex(posPx);
+        if (direct >= 0)
+            return direct;
+
+        if (m_textBoxes.empty())
+            return -1;
+
+        const QPointF posPt(posPx.x() * (72.0 / qMax(1, m_xRes)),
+                            posPx.y() * (72.0 / qMax(1, m_yRes)));
+
+        int bestIndex = -1;
+        double bestDistanceSquared = 0.0;
+
+        for (int i = 0; i < static_cast<int>(m_textBoxes.size()); ++i) {
+            const QRectF r = m_textBoxes[static_cast<size_t>(i)].pdfRect;
+            const QPointF c = r.center();
+            const double dx = c.x() - posPt.x();
+            const double dy = c.y() - posPt.y();
+            const double d2 = dx * dx + dy * dy;
+            if (bestIndex < 0 || d2 < bestDistanceSquared) {
+                bestIndex = i;
+                bestDistanceSquared = d2;
+            }
+        }
+        return bestIndex;
+    }
+
+    std::vector<int> computeReadingOrderIndices() const
+    {
+        std::vector<int> order;
+        order.reserve(m_textBoxes.size());
+        for (int i = 0; i < static_cast<int>(m_textBoxes.size()); ++i)
+            order.push_back(i);
+
+        if (order.size() <= 1)
+            return order;
+
+        // Approximate reading order: group by line (Y), then sort by X within line.
+        // We use a tolerance to avoid tiny baseline differences splitting lines.
+        std::sort(order.begin(), order.end(), [this](int ai, int bi) {
+            const QRectF a = m_textBoxes[static_cast<size_t>(ai)].pdfRect;
+            const QRectF b = m_textBoxes[static_cast<size_t>(bi)].pdfRect;
+
+            const qreal ay = a.center().y();
+            const qreal by = b.center().y();
+
+            const qreal aLineHeight = qMax<qreal>(1.0, a.height());
+            const qreal bLineHeight = qMax<qreal>(1.0, b.height());
+            const qreal lineTolerance = qMax<qreal>(2.0, qMin(aLineHeight, bLineHeight) * 0.6);
+
+            if (qAbs(ay - by) > lineTolerance)
+                return ay < by;
+
+            const qreal ax = a.x();
+            const qreal bx = b.x();
+            if (ax != bx)
+                return ax < bx;
+
+            const qreal aw = a.width();
+            const qreal bw = b.width();
+            if (aw != bw)
+                return aw < bw;
+
+            return ai < bi;
+        });
+
+        return order;
+    }
+
+    void updateSelectionFromTextRange()
+    {
+        m_selectedText.clear();
+        m_selectedPixelRects.clear();
+
+        if (m_textBoxes.empty() || m_anchorTextBoxIndex < 0) {
+            m_hasSelection = false;
+            return;
+        }
+
+        const int currentTextBoxIndex = hitTestNearestTextBoxIndex(m_selEnd);
+        if (currentTextBoxIndex < 0) {
+            m_hasSelection = false;
+            return;
+        }
+
+        const std::vector<int> readingOrder = computeReadingOrderIndices();
+        std::vector<int> textBoxIndexToReadingPos(m_textBoxes.size(), -1);
+        for (int pos = 0; pos < static_cast<int>(readingOrder.size()); ++pos)
+            textBoxIndexToReadingPos[static_cast<size_t>(readingOrder[static_cast<size_t>(pos)])] = pos;
+
+        const int anchorPos = textBoxIndexToReadingPos[static_cast<size_t>(m_anchorTextBoxIndex)];
+        const int currentPos = textBoxIndexToReadingPos[static_cast<size_t>(currentTextBoxIndex)];
+        if (anchorPos < 0 || currentPos < 0) {
+            m_hasSelection = false;
+            return;
+        }
+
+        const int startPos = qMin(anchorPos, currentPos);
+        const int endPos = qMax(anchorPos, currentPos);
+
+        QStringList parts;
+        parts.reserve(endPos - startPos + 1);
+        for (int pos = startPos; pos <= endPos; ++pos) {
+            const int idx = readingOrder[static_cast<size_t>(pos)];
+            const auto &b = m_textBoxes[static_cast<size_t>(idx)];
+            const QString t = b.text.trimmed();
+            if (!t.isEmpty())
+                parts.append(t);
+            m_selectedPixelRects.push_back(pdfPointsToPixelRect(b.pdfRect));
+        }
+
+        m_selectedText = parts.join(QLatin1Char(' ')).simplified();
+        m_hasSelection = !m_selectedText.isEmpty();
+    }
+
     void selectWordAtIndex(int idx)
     {
         if (idx < 0 || idx >= static_cast<int>(m_textBoxes.size()))
@@ -504,6 +625,8 @@ private:
     QPoint m_selStart;
     QPoint m_selEnd;
     QString m_selectedText;
+
+    int m_anchorTextBoxIndex = -1;
 };
 
 static void clearOtherPdfPages(PdfPageWidget *self, QWidget *pagesRoot)
@@ -929,7 +1052,19 @@ void PdfViewerForm::setupUi()
     setAttribute(Qt::WA_TranslucentBackground);
     setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
     setMinimumSize(520, 420);
-    resize(680, 580);
+
+    const QScreen *targetScreen = QGuiApplication::screenAt(QCursor::pos());
+    if (!targetScreen)
+        targetScreen = QGuiApplication::primaryScreen();
+    if (targetScreen) {
+        const QRect availableDesktopGeometry = targetScreen->availableGeometry();
+        if (availableDesktopGeometry.isValid() && !availableDesktopGeometry.isNull())
+            setGeometry(availableDesktopGeometry);
+        else
+            resize(680, 580);
+    } else {
+        resize(680, 580);
+    }
 
     QVBoxLayout *rootLayout = new QVBoxLayout(this);
     rootLayout->setContentsMargins(0, 0, 0, 0);
