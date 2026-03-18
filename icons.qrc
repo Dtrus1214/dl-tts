@@ -5,6 +5,10 @@
         <file>icons/stop.svg</file>
         <file>icons/speaker.svg</file>
         <file>icons/close.svg</file>
+        <file>icons/maximize.svg</file>
+        <file>icons/restore.svg</file>
+        <file>icons/zoom-in.svg</file>
+        <file>icons/zoom-out.svg</file>
         <file>icons/man.svg</file>
         <file>icons/woman.svg</file>
     </qresource>
