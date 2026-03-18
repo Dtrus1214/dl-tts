@@ -88,11 +88,9 @@ void CustomButton::paintEvent(QPaintEvent *event)
     int r = 6;
     if (m_role == TitleBar) {
         r = height() / 2;
-    } else if (objectName() == QLatin1String("btnTtsPlay") ||
-               objectName() == QLatin1String("btnTtsPause") ||
-               objectName() == QLatin1String("btnTtsStop")  ||
-               objectName() == QLatin1String("btnSpeaker")) {
-        r = height() / 2; // round controls
+    } else if (text().isEmpty() && width() == height()) {
+        // Icon-only square buttons should be circular, like the transport controls.
+        r = height() / 2;
     }
     QRect rect = this->rect().adjusted(1, 1, -1, -1);
     QPainterPath path;

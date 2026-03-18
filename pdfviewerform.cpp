@@ -1155,28 +1155,22 @@ void PdfViewerForm::setupUi()
     toolbarLayout->setSpacing(8);
 
 #ifdef HAVE_POPPLER
-    m_btnOpenPdf = new CustomButton(tr("Open"), CustomButton::Secondary, content);
+    m_btnOpenPdf = new CustomButton(CustomButton::Secondary, content);
     m_btnOpenPdf->setObjectName(QStringLiteral("btnOpenPdf"));
-    m_btnOpenPdf->setMinimumHeight(32);
-    m_btnOpenPdf->setMinimumWidth(72);
+    m_btnOpenPdf->setFixedSize(32, 32);
+    m_btnOpenPdf->setIconPath(QStringLiteral(":/icons/folder-open.svg"));
+    m_btnOpenPdf->setToolTip(tr("Open PDF"));
     connect(m_btnOpenPdf, &QPushButton::clicked, this, &PdfViewerForm::onOpenPdf);
     toolbarLayout->addWidget(m_btnOpenPdf);
 
-    m_btnClosePdf = new CustomButton(tr("Close PDF"), CustomButton::Secondary, content);
+    m_btnClosePdf = new CustomButton(CustomButton::Secondary, content);
     m_btnClosePdf->setObjectName(QStringLiteral("btnClosePdf"));
-    m_btnClosePdf->setMinimumHeight(32);
+    m_btnClosePdf->setFixedSize(32, 32);
+    m_btnClosePdf->setIconPath(QStringLiteral(":/icons/document-close.svg"));
+    m_btnClosePdf->setToolTip(tr("Close PDF"));
     m_btnClosePdf->setEnabled(false);
     connect(m_btnClosePdf, &QPushButton::clicked, this, &PdfViewerForm::onClosePdf);
     toolbarLayout->addWidget(m_btnClosePdf);
-
-    m_btnPlayTts = new CustomButton(CustomButton::Primary, content);
-    m_btnPlayTts->setObjectName(QStringLiteral("btnPlayTts"));
-    m_btnPlayTts->setFixedSize(32, 32);
-    m_btnPlayTts->setIconPath(QStringLiteral(":/icons/play.svg"));
-    m_btnPlayTts->setEnabled(false);
-    m_btnPlayTts->setToolTip(tr("Play TTS"));
-    connect(m_btnPlayTts, &QPushButton::clicked, this, &PdfViewerForm::onPlayTts);
-    toolbarLayout->addWidget(m_btnPlayTts);
 
     m_btnZoomOut = new CustomButton(CustomButton::Secondary, content);
     m_btnZoomOut->setObjectName(QStringLiteral("btnPdfZoomOut"));
@@ -1195,6 +1189,16 @@ void PdfViewerForm::setupUi()
     m_btnZoomIn->setEnabled(false);
     connect(m_btnZoomIn, &QPushButton::clicked, this, &PdfViewerForm::onZoomIn);
     toolbarLayout->addWidget(m_btnZoomIn);
+
+    m_btnPlayTts = new CustomButton(CustomButton::Primary, content);
+    m_btnPlayTts->setObjectName(QStringLiteral("btnPlayTts"));
+    m_btnPlayTts->setFixedSize(32, 32);
+    m_btnPlayTts->setIconPath(QStringLiteral(":/icons/play.svg"));
+    m_btnPlayTts->setEnabled(false);
+    m_btnPlayTts->setToolTip(tr("Play TTS"));
+    connect(m_btnPlayTts, &QPushButton::clicked, this, &PdfViewerForm::onPlayTts);
+    toolbarLayout->addWidget(m_btnPlayTts);
+
 #else
     QLabel *noPopplerLabel = new QLabel(
         tr("PDF support not built. Set POPPLER_DIR in CrystalTts.pro and rebuild with Poppler Qt5 development files."),
@@ -2011,6 +2015,8 @@ void PdfViewerForm::stopSentenceTts()
     m_sentenceTtsActive = false;
     m_currentCueIndex = -1;
     setPlaybackHighlight(nullptr);
+    if (m_btnPlayTts)
+        m_btnPlayTts->setIconPath(QStringLiteral(":/icons/play.svg"));
     if (m_ttsEngine)
         m_ttsEngine->stop();
 }
@@ -2073,6 +2079,13 @@ void PdfViewerForm::onTtsStateChanged(int state)
 {
     const int prev = m_lastTtsState;
     m_lastTtsState = state;
+
+    if (m_btnPlayTts) {
+        const bool speaking = m_sentenceTtsActive && (state == TtsEngine::Speaking);
+        m_btnPlayTts->setIconPath(speaking ? QStringLiteral(":/icons/pause.svg")
+                                           : QStringLiteral(":/icons/play.svg"));
+    }
+
     if (!m_sentenceTtsActive)
         return;
     if (state == TtsEngine::Ready && prev == TtsEngine::Speaking) {

@@ -139,8 +139,8 @@ void MainWindow::setupUiDynamic()
     m_btnSpeaker->setIconPath(QStringLiteral(":/icons/speaker.svg"));
     m_btnPdfViewer = new CustomButton(CustomButton::Secondary, content);
     m_btnPdfViewer->setObjectName("btnPdfViewer");
-    m_btnPdfViewer->setFixedSize(48, 32);
-    m_btnPdfViewer->setText(tr("PDF"));
+    m_btnPdfViewer->setFixedSize(32, 32);
+    m_btnPdfViewer->setIconPath(QStringLiteral(":/icons/document.svg"));
     m_btnPdfViewer->setToolTip(tr("Open PDF Viewer"));
     ttsLayout->addWidget(m_btnPlay);
     ttsLayout->addWidget(m_btnStop);
