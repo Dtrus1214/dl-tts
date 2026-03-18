@@ -11,6 +11,7 @@
 #include <QTemporaryFile>
 #include <QtConcurrent>
 #include <QFutureWatcher>
+#include <vector>
 
 #include "sherpa-onnx/c-api/c-api.h"
 #include <cstring>
@@ -68,6 +69,130 @@ static QString runSynthesis(const QString &modelPath, const QString &tokensPath,
     return wavPath;
 }
 
+static bool runSynthesisToPath(const QString &modelPath, const QString &tokensPath,
+                               const QString &dataDir, const QString &text,
+                               const QString &wavPath)
+{
+    if (wavPath.trimmed().isEmpty())
+        return false;
+
+    if (modelPath.isEmpty() || tokensPath.isEmpty() || dataDir.isEmpty() || text.trimmed().isEmpty())
+        return false;
+
+    QByteArray modelPathUtf8 = modelPath.toUtf8();
+    QByteArray tokensPathUtf8 = tokensPath.toUtf8();
+    QByteArray dataDirUtf8 = dataDir.toUtf8();
+    QByteArray textUtf8 = text.trimmed().toUtf8();
+
+    SherpaOnnxOfflineTtsConfig config;
+    memset(&config, 0, sizeof(config));
+    config.model.vits.model = modelPathUtf8.constData();
+    config.model.vits.tokens = tokensPathUtf8.constData();
+    config.model.vits.data_dir = dataDirUtf8.constData();
+    config.model.vits.noise_scale = 0.667f;
+    config.model.vits.noise_scale_w = 0.8f;
+    config.model.vits.length_scale = 1.0f;
+    config.model.num_threads = 1;
+    config.model.debug = 0;
+
+    const SherpaOnnxOfflineTts *tts = SherpaOnnxCreateOfflineTts(&config);
+    if (!tts)
+        return false;
+
+    const SherpaOnnxGeneratedAudio *audio = SherpaOnnxOfflineTtsGenerate(
+        tts, textUtf8.constData(), 0, 1.0f);
+    if (!audio || !audio->samples || audio->n == 0) {
+        SherpaOnnxDestroyOfflineTts(tts);
+        return false;
+    }
+
+    SherpaOnnxWriteWave(audio->samples, audio->n, audio->sample_rate, wavPath.toUtf8().constData());
+
+    SherpaOnnxDestroyOfflineTtsGeneratedAudio(audio);
+    SherpaOnnxDestroyOfflineTts(tts);
+    return QFileInfo::exists(wavPath);
+}
+
+static bool runSynthesisChunksToPath(const QString &modelPath, const QString &tokensPath,
+                                     const QString &dataDir, const QStringList &chunks,
+                                     const QString &wavPath, int silenceMsBetweenChunks)
+{
+    if (wavPath.trimmed().isEmpty())
+        return false;
+    if (modelPath.isEmpty() || tokensPath.isEmpty() || dataDir.isEmpty())
+        return false;
+
+    QStringList trimmed;
+    trimmed.reserve(chunks.size());
+    for (const QString &c : chunks) {
+        const QString t = c.trimmed();
+        if (!t.isEmpty())
+            trimmed.append(t);
+    }
+    if (trimmed.isEmpty())
+        return false;
+
+    QByteArray modelPathUtf8 = modelPath.toUtf8();
+    QByteArray tokensPathUtf8 = tokensPath.toUtf8();
+    QByteArray dataDirUtf8 = dataDir.toUtf8();
+
+    SherpaOnnxOfflineTtsConfig config;
+    memset(&config, 0, sizeof(config));
+    config.model.vits.model = modelPathUtf8.constData();
+    config.model.vits.tokens = tokensPathUtf8.constData();
+    config.model.vits.data_dir = dataDirUtf8.constData();
+    config.model.vits.noise_scale = 0.667f;
+    config.model.vits.noise_scale_w = 0.8f;
+    config.model.vits.length_scale = 1.0f;
+    config.model.num_threads = 1;
+    config.model.debug = 0;
+
+    const SherpaOnnxOfflineTts *tts = SherpaOnnxCreateOfflineTts(&config);
+    if (!tts)
+        return false;
+
+    std::vector<float> all;
+    int sampleRate = 0;
+
+    const int silenceMs = qMax(0, silenceMsBetweenChunks);
+
+    for (int i = 0; i < trimmed.size(); ++i) {
+        const QByteArray textUtf8 = trimmed[i].toUtf8();
+        const SherpaOnnxGeneratedAudio *audio = SherpaOnnxOfflineTtsGenerate(
+            tts, textUtf8.constData(), 0, 1.0f);
+        if (!audio || !audio->samples || audio->n == 0) {
+            if (audio)
+                SherpaOnnxDestroyOfflineTtsGeneratedAudio(audio);
+            SherpaOnnxDestroyOfflineTts(tts);
+            return false;
+        }
+
+        if (sampleRate <= 0)
+            sampleRate = audio->sample_rate;
+        if (audio->sample_rate != sampleRate) {
+            SherpaOnnxDestroyOfflineTtsGeneratedAudio(audio);
+            SherpaOnnxDestroyOfflineTts(tts);
+            return false;
+        }
+
+        all.insert(all.end(), audio->samples, audio->samples + audio->n);
+        SherpaOnnxDestroyOfflineTtsGeneratedAudio(audio);
+
+        if (silenceMs > 0 && i + 1 < trimmed.size() && sampleRate > 0) {
+            const int silenceSamples = qMax(0, (sampleRate * silenceMs) / 1000);
+            all.insert(all.end(), static_cast<size_t>(silenceSamples), 0.0f);
+        }
+    }
+
+    SherpaOnnxDestroyOfflineTts(tts);
+
+    if (all.empty() || sampleRate <= 0)
+        return false;
+
+    SherpaOnnxWriteWave(all.data(), static_cast<int32_t>(all.size()), sampleRate, wavPath.toUtf8().constData());
+    return QFileInfo::exists(wavPath);
+}
+
 TtsEngine::TtsEngine(QObject *parent)
     : QObject(parent)
 {
@@ -119,6 +244,25 @@ QString TtsEngine::defaultDataDir() const
     return QCoreApplication::applicationDirPath() + QLatin1String("/tts-model/espeak-ng-data");
 }
 
+QString TtsEngine::synthesizeToWavPath(const QString &text, const QString &desiredWavPath) const
+{
+    QString out = desiredWavPath.trimmed();
+    if (out.isEmpty())
+        return QString();
+
+    // Ensure .wav extension
+    if (!out.endsWith(QLatin1String(".wav"), Qt::CaseInsensitive))
+        out += QLatin1String(".wav");
+
+    QString model = m_modelPath.isEmpty() ? defaultModelPath() : m_modelPath;
+    QString tokens = m_tokensPath.isEmpty() ? defaultTokensPath() : m_tokensPath;
+    QString dataDir = m_dataDir.isEmpty() ? defaultDataDir() : m_dataDir;
+
+    if (runSynthesisToPath(model, tokens, dataDir, text, out))
+        return out;
+    return QString();
+}
+
 bool TtsEngine::initialize()
 {
     QString model = m_modelPath.isEmpty() ? defaultModelPath() : m_modelPath;
@@ -168,6 +312,78 @@ void TtsEngine::speak(const QString &text)
         QString path = watcher->result();
         watcher->deleteLater();
         emit synthesisFinished(path);
+    });
+    watcher->setFuture(future);
+}
+
+void TtsEngine::exportWav(const QString &text, const QString &wavPath)
+{
+    const QString t = text.trimmed();
+    if (t.isEmpty()) {
+        emit exportFinished(false, QString(), QStringLiteral("No text to export."));
+        return;
+    }
+    if (!m_available && !initialize()) {
+        emit exportFinished(false, QString(), QStringLiteral("TTS engine is not available."));
+        return;
+    }
+
+    QFuture<QString> future = QtConcurrent::run([this, t, wavPath]() {
+        return synthesizeToWavPath(t, wavPath);
+    });
+    QFutureWatcher<QString> *watcher = new QFutureWatcher<QString>(this);
+    connect(watcher, &QFutureWatcher<QString>::finished, this, [this, watcher]() {
+        const QString out = watcher->result();
+        watcher->deleteLater();
+        if (out.isEmpty()) {
+            emit exportFinished(false, QString(), QStringLiteral("Export failed."));
+        } else {
+            emit exportFinished(true, out, QString());
+        }
+    });
+    watcher->setFuture(future);
+}
+
+void TtsEngine::exportWavChunks(const QStringList &chunks, const QString &wavPath, int silenceMsBetweenChunks)
+{
+    if (chunks.isEmpty()) {
+        emit exportFinished(false, QString(), QStringLiteral("No text to export."));
+        return;
+    }
+    if (!m_available && !initialize()) {
+        emit exportFinished(false, QString(), QStringLiteral("TTS engine is not available."));
+        return;
+    }
+
+    const QString desired = wavPath.trimmed();
+    if (desired.isEmpty()) {
+        emit exportFinished(false, QString(), QStringLiteral("Invalid output path."));
+        return;
+    }
+
+    QFuture<QString> future = QtConcurrent::run([this, chunks, desired, silenceMsBetweenChunks]() {
+        QString out = desired;
+        if (!out.endsWith(QLatin1String(".wav"), Qt::CaseInsensitive))
+            out += QLatin1String(".wav");
+
+        const QString model = m_modelPath.isEmpty() ? defaultModelPath() : m_modelPath;
+        const QString tokens = m_tokensPath.isEmpty() ? defaultTokensPath() : m_tokensPath;
+        const QString dataDir = m_dataDir.isEmpty() ? defaultDataDir() : m_dataDir;
+
+        if (runSynthesisChunksToPath(model, tokens, dataDir, chunks, out, silenceMsBetweenChunks))
+            return out;
+        return QString();
+    });
+
+    QFutureWatcher<QString> *watcher = new QFutureWatcher<QString>(this);
+    connect(watcher, &QFutureWatcher<QString>::finished, this, [this, watcher]() {
+        const QString out = watcher->result();
+        watcher->deleteLater();
+        if (out.isEmpty()) {
+            emit exportFinished(false, QString(), QStringLiteral("Export failed."));
+        } else {
+            emit exportFinished(true, out, QString());
+        }
     });
     watcher->setFuture(future);
 }

@@ -57,6 +57,7 @@ private slots:
     void onOpenPdf();
     void onClosePdf();
     void onPlayTts();
+    void onSaveAudio();
     void onHideWindow();
     void onToggleMaximize();
     void updateMaximizeButton();
@@ -111,6 +112,7 @@ private:
     CustomButton *m_btnOpenPdf = nullptr;
     CustomButton *m_btnClosePdf = nullptr;
     CustomButton *m_btnPlayTts = nullptr;
+    CustomButton *m_btnSaveAudio = nullptr;
 #ifdef HAVE_POPPLER
     CustomButton *m_btnZoomOut = nullptr;
     CustomButton *m_btnZoomIn = nullptr;

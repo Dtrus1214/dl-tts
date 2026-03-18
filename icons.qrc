@@ -14,5 +14,6 @@
         <file>icons/document.svg</file>
         <file>icons/folder-open.svg</file>
         <file>icons/document-close.svg</file>
+        <file>icons/save.svg</file>
     </qresource>
 </RCC>

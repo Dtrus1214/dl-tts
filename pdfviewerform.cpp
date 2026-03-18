@@ -29,6 +29,7 @@
 #include <QProgressBar>
 #include <QScrollBar>
 #include <QRegularExpression>
+#include <QFileInfo>
 #if defined(Q_OS_WIN)
 #include <windows.h>
 #endif
@@ -726,6 +727,31 @@ PdfViewerForm::PdfViewerForm(TtsEngine *ttsEngine, QWidget *parent)
     if (m_ttsEngine)
         connect(m_ttsEngine, &TtsEngine::stateChanged, this, &PdfViewerForm::onTtsStateChanged);
 #endif
+
+    if (m_ttsEngine) {
+        connect(m_ttsEngine, &TtsEngine::exportFinished, this,
+                [this](bool ok, const QString &wavPath, const QString &err) {
+                    if (m_pdfLoadProgress) {
+                        m_pdfLoadProgress->setVisible(false);
+                        m_pdfLoadProgress->setRange(0, 100);
+                        m_pdfLoadProgress->setValue(0);
+                    }
+                    if (m_btnSaveAudio)
+                        m_btnSaveAudio->setEnabled(!m_currentPdfPath.isEmpty());
+                    if (m_btnOpenPdf)
+                        m_btnOpenPdf->setEnabled(true);
+                    if (m_btnClosePdf)
+                        m_btnClosePdf->setEnabled(!m_currentPdfPath.isEmpty());
+
+                    if (!ok) {
+                        QMessageBox::warning(this, tr("Export audio"),
+                                             err.isEmpty() ? tr("Export failed.") : err);
+                    } else {
+                        QMessageBox::information(this, tr("Export audio"),
+                                                 tr("Saved WAV to:\n%1").arg(wavPath));
+                    }
+                });
+    }
 }
 
 PdfViewerForm::~PdfViewerForm()
@@ -1199,6 +1225,15 @@ void PdfViewerForm::setupUi()
     connect(m_btnPlayTts, &QPushButton::clicked, this, &PdfViewerForm::onPlayTts);
     toolbarLayout->addWidget(m_btnPlayTts);
 
+    m_btnSaveAudio = new CustomButton(CustomButton::Secondary, content);
+    m_btnSaveAudio->setObjectName(QStringLiteral("btnSaveAudio"));
+    m_btnSaveAudio->setFixedSize(32, 32);
+    m_btnSaveAudio->setIconPath(QStringLiteral(":/icons/save.svg"));
+    m_btnSaveAudio->setEnabled(false);
+    m_btnSaveAudio->setToolTip(tr("Save audio…"));
+    connect(m_btnSaveAudio, &QPushButton::clicked, this, &PdfViewerForm::onSaveAudio);
+    toolbarLayout->addWidget(m_btnSaveAudio);
+
 #else
     QLabel *noPopplerLabel = new QLabel(
         tr("PDF support not built. Set POPPLER_DIR in CrystalTts.pro and rebuild with Poppler Qt5 development files."),
@@ -1321,6 +1356,68 @@ void PdfViewerForm::onPlayTts()
     }
     m_ttsEngine->speak(m_extractedText);
 #endif
+}
+
+void PdfViewerForm::onSaveAudio()
+{
+    if (!m_ttsEngine || !m_ttsEngine->isAvailable()) {
+        QMessageBox::warning(this, tr("Export audio"), tr("TTS engine is not available."));
+        return;
+    }
+#ifdef HAVE_POPPLER
+    if (!m_doc) {
+        QMessageBox::information(this, tr("Export audio"), tr("Open a PDF first."));
+        return;
+    }
+    if (m_sentenceCues.isEmpty())
+        rebuildSentenceCues();
+#endif
+
+    QStringList chunks;
+#ifdef HAVE_POPPLER
+    chunks.reserve(m_sentenceCues.size());
+    for (const auto &cue : m_sentenceCues) {
+        const QString t = cue.text.trimmed();
+        if (!t.isEmpty())
+            chunks.append(t);
+    }
+#else
+    const QString text = m_extractedText.trimmed();
+    if (!text.isEmpty())
+        chunks.append(text);
+#endif
+
+    if (chunks.isEmpty()) {
+        QMessageBox::information(this, tr("Export audio"), tr("No text to export."));
+        return;
+    }
+
+    const QString base = QFileInfo(m_currentPdfPath).completeBaseName().trimmed();
+    const QString suggested = base.isEmpty() ? QStringLiteral("crystaltts.wav")
+                                             : (base + QStringLiteral(".wav"));
+    const QString outPath = QFileDialog::getSaveFileName(
+        this,
+        tr("Save audio"),
+        suggested,
+        tr("WAV audio (*.wav);;All files (*)"));
+    if (outPath.isEmpty())
+        return;
+
+    if (m_btnSaveAudio)
+        m_btnSaveAudio->setEnabled(false);
+    if (m_btnOpenPdf)
+        m_btnOpenPdf->setEnabled(false);
+    if (m_btnClosePdf)
+        m_btnClosePdf->setEnabled(false);
+
+    if (m_pdfLoadProgress) {
+        m_pdfLoadProgress->setVisible(true);
+        m_pdfLoadProgress->setRange(0, 0);
+        m_pdfLoadProgress->setFormat(tr("Exporting audio…"));
+    }
+
+    // Export sentence-by-sentence to avoid huge single-text synthesis.
+    m_ttsEngine->exportWavChunks(chunks, outPath);
 }
 
 #ifdef HAVE_POPPLER
@@ -2288,6 +2385,8 @@ void PdfViewerForm::loadPdf(const QString &path)
         m_btnClosePdf->setEnabled(true);
     if (m_btnPlayTts)
         m_btnPlayTts->setEnabled(true);
+    if (m_btnSaveAudio)
+        m_btnSaveAudio->setEnabled(true);
     if (m_btnZoomIn)
         m_btnZoomIn->setEnabled(true);
     if (m_btnZoomOut)
@@ -2329,6 +2428,8 @@ void PdfViewerForm::clearPdf()
         m_btnClosePdf->setEnabled(false);
     if (m_btnPlayTts)
         m_btnPlayTts->setEnabled(false);
+    if (m_btnSaveAudio)
+        m_btnSaveAudio->setEnabled(false);
 #ifdef HAVE_POPPLER
     if (m_btnZoomIn)
         m_btnZoomIn->setEnabled(false);

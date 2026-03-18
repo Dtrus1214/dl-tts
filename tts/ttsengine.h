@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 QT_BEGIN_NAMESPACE
 class QMediaPlayer;
@@ -39,12 +40,19 @@ public:
     void resume();
     void stop();
 
+    /** Synthesize text to a WAV file (does not start playback). */
+    void exportWav(const QString &text, const QString &wavPath);
+    /** Synthesize multiple chunks and concatenate into one WAV (does not start playback). */
+    void exportWavChunks(const QStringList &chunks, const QString &wavPath, int silenceMsBetweenChunks = 120);
+
     int state() const;
 
 signals:
     void stateChanged(int state);
     /** Emitted when synthesis finished and WAV is ready to play (path valid only on main thread). */
     void synthesisFinished(const QString &wavPath);
+    /** Emitted when exportWav() finishes. */
+    void exportFinished(bool ok, const QString &wavPath, const QString &errorMessage);
 
 private:
     void setState(int state);
@@ -54,6 +62,8 @@ private:
     QString defaultModelPath() const;
     QString defaultTokensPath() const;
     QString defaultDataDir() const;
+
+    QString synthesizeToWavPath(const QString &text, const QString &desiredWavPath) const;
 
     QString m_modelPath;
     QString m_tokensPath;
