@@ -50,6 +50,9 @@ HEADERS += \
 
 RESOURCES += icons.qrc
 
+TRANSLATIONS += \
+    i18n/CrystalTts_ja.ts
+
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target

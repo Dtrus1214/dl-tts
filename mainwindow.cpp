@@ -27,6 +27,8 @@
 #include <QEvent>
 #include <QIcon>
 #include <QSettings>
+#include <QTranslator>
+#include <QCoreApplication>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -83,6 +85,62 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow()
 {
     unregisterGlobalHotkey();
+}
+
+void MainWindow::applyAppLanguage(const QString &lang)
+{
+    const QString normalized = lang.trimmed();
+    if (m_currentAppLanguage == normalized)
+        return;
+
+    if (!m_appTranslator) {
+        QObject *obj = qApp->property("_crystaltts_translator").value<QObject *>();
+        m_appTranslator = qobject_cast<QTranslator *>(obj);
+    }
+    if (!m_appTranslator) {
+        m_currentAppLanguage = normalized;
+        retranslateUi();
+        return;
+    }
+
+    qApp->removeTranslator(m_appTranslator);
+
+    bool loaded = false;
+    if (!normalized.isEmpty()) {
+        const QString base = QStringLiteral("CrystalTts_%1").arg(normalized);
+        const QString appDir = QCoreApplication::applicationDirPath();
+        const QString diskPath = appDir + QStringLiteral("/i18n");
+        loaded = (m_appTranslator->load(base, diskPath) || m_appTranslator->load(QStringLiteral(":/i18n/") + base));
+    }
+
+    if (loaded)
+        qApp->installTranslator(m_appTranslator);
+
+    m_currentAppLanguage = normalized;
+    retranslateUi();
+}
+
+void MainWindow::retranslateUi()
+{
+    setWindowTitle(tr("CrystalTts"));
+    if (m_labelTitle)
+        m_labelTitle->setText(tr("Selection"));
+    if (m_btnSettings)
+        m_btnSettings->setToolTip(tr("Settings"));
+    if (m_btnPdfViewer)
+        m_btnPdfViewer->setToolTip(tr("Open PDF Viewer"));
+
+    if (m_trayIcon)
+        m_trayIcon->setToolTip(tr("CrystalTts - Text selection for TTS"));
+
+    if (m_showHideAction)
+        m_showHideAction->setText(isVisible() ? tr("Hide CrystalTts") : tr("Show CrystalTts"));
+    if (m_settingsAction)
+        m_settingsAction->setText(tr("Settings..."));
+    if (m_quitAction)
+        m_quitAction->setText(tr("Quit"));
+
+    updateSpeakerToolTip();
 }
 
 void MainWindow::setupUiDynamic()
@@ -259,8 +317,8 @@ void MainWindow::setupTrayIcon()
 {
     m_trayMenu = new QMenu(this);
     m_showHideAction = m_trayMenu->addAction(tr("Show CrystalTts"), this, &MainWindow::toggleWindowVisibility);
-    m_trayMenu->addAction(tr("Settings..."), this, &MainWindow::openSettingsDialog);
-    m_trayMenu->addAction(tr("Quit"), this, &MainWindow::quitFromTray);
+    m_settingsAction = m_trayMenu->addAction(tr("Settings..."), this, &MainWindow::openSettingsDialog);
+    m_quitAction = m_trayMenu->addAction(tr("Quit"), this, &MainWindow::quitFromTray);
 
     m_trayIcon = new QSystemTrayIcon(this);
     m_trayIcon->setContextMenu(m_trayMenu);
@@ -304,6 +362,7 @@ void MainWindow::loadAndApplySettings()
     QSettings s;
     s.beginGroup(QStringLiteral("settings"));
 
+    const QString appLang = s.value(QStringLiteral("appLanguage"), QString()).toString();
     m_currentSpeakerId = s.value(QStringLiteral("speakerId"), m_currentSpeakerId).toInt();
     if (m_currentSpeakerId < 0)
         m_currentSpeakerId = 0;
@@ -325,6 +384,8 @@ void MainWindow::loadAndApplySettings()
     updateSpeakerToolTip();
 
     s.endGroup();
+
+    applyAppLanguage(appLang);
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)

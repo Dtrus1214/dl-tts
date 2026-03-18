@@ -40,6 +40,10 @@ private:
     // Speaker (draft)
     QComboBox *m_comboSpeaker = nullptr;
 
+    // Language
+    QComboBox *m_comboAppLanguage = nullptr;
+    QComboBox *m_comboTtsLanguage = nullptr;
+
     // Speed
     QSlider *m_speedSlider = nullptr;
     QLabel *m_speedValueLabel = nullptr;

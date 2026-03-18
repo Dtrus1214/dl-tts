@@ -22,6 +22,7 @@ class QHideEvent;
 class QSystemTrayIcon;
 class QMenu;
 class QAction;
+class QTranslator;
 QT_END_NAMESPACE
 
 class CustomButton;
@@ -71,6 +72,8 @@ private:
     void setupWindowFrame();
     void setupTrayIcon();
     void loadAndApplySettings();
+    void applyAppLanguage(const QString &lang);
+    void retranslateUi();
     void registerGlobalHotkey();
     void unregisterGlobalHotkey();
     void simulateCopy();
@@ -100,8 +103,13 @@ private:
     QSystemTrayIcon *m_trayIcon = nullptr;
     QMenu *m_trayMenu = nullptr;
     QAction *m_showHideAction = nullptr;
+    QAction *m_settingsAction = nullptr;
+    QAction *m_quitAction = nullptr;
 
     bool m_restoreMainWindowAfterPdf = false;
+
+    QString m_currentAppLanguage;
+    QTranslator *m_appTranslator = nullptr;
 
 #if defined(Q_OS_WIN)
     bool m_playAfterCopy = false;

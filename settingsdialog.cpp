@@ -23,6 +23,8 @@
 static constexpr const char *kSettingsGroup = "settings";
 static constexpr const char *kSpeakerIdKey = "speakerId";
 static constexpr const char *kTtsSpeedKey = "ttsSpeedPercent";
+static constexpr const char *kAppLanguageKey = "appLanguage";
+static constexpr const char *kTtsLanguageKey = "ttsLanguage";
 static constexpr const char *kRepeatModeKey = "repeatMode";
 static constexpr const char *kPauseSentenceKey = "pauseSentenceMs";
 static constexpr const char *kPauseParagraphKey = "pauseParagraphMs";
@@ -324,6 +326,40 @@ void SettingsDialog::buildUi()
         addPage(page, tr("Speaker"));
     }
 
+    // ---- Language ----
+    {
+        QWidget *page = new QWidget(m_stack);
+        QVBoxLayout *v = new QVBoxLayout(page);
+        v->setContentsMargins(12, 12, 12, 12);
+        v->setSpacing(10);
+
+        QLabel *hint = new QLabel(tr("App language requires translation files (.qm). If none are available, it will fall back to English/System."), page);
+        hint->setWordWrap(true);
+        v->addWidget(hint);
+        v->addSpacing(10);
+
+        QFormLayout *form = new QFormLayout();
+
+        m_comboAppLanguage = new QComboBox(page);
+        m_comboAppLanguage->addItem(tr("System default"), QString());
+        m_comboAppLanguage->addItem(tr("English"), QStringLiteral("en"));
+        m_comboAppLanguage->addItem(tr("Japanese"), QStringLiteral("ja"));
+        m_comboAppLanguage->addItem(tr("Chinese (Simplified)"), QStringLiteral("zh_CN"));
+        form->addRow(tr("Application"), m_comboAppLanguage);
+
+        m_comboTtsLanguage = new QComboBox(page);
+        m_comboTtsLanguage->addItem(tr("Auto / model default"), QString());
+        m_comboTtsLanguage->addItem(tr("English"), QStringLiteral("en"));
+        m_comboTtsLanguage->addItem(tr("Japanese"), QStringLiteral("ja"));
+        m_comboTtsLanguage->addItem(tr("Chinese (Simplified)"), QStringLiteral("zh_CN"));
+        form->addRow(tr("TTS"), m_comboTtsLanguage);
+
+        v->addLayout(form);
+        v->addStretch(1);
+
+        addPage(page, tr("Language"));
+    }
+
     // ---- TTS speed ----
     {
         QWidget *page = new QWidget(m_stack);
@@ -494,6 +530,19 @@ void SettingsDialog::loadFromSettings()
     if (m_speedSlider)
         m_speedSlider->setValue(qBound(50, speedPct, 200));
 
+    const QString appLang = s.value(QLatin1String(kAppLanguageKey), QString()).toString();
+    if (m_comboAppLanguage) {
+        int idx = m_comboAppLanguage->findData(appLang);
+        if (idx < 0) idx = 0;
+        m_comboAppLanguage->setCurrentIndex(idx);
+    }
+    const QString ttsLang = s.value(QLatin1String(kTtsLanguageKey), QString()).toString();
+    if (m_comboTtsLanguage) {
+        int idx = m_comboTtsLanguage->findData(ttsLang);
+        if (idx < 0) idx = 0;
+        m_comboTtsLanguage->setCurrentIndex(idx);
+    }
+
     const int repeatMode = s.value(QLatin1String(kRepeatModeKey), 1).toInt();
     setRepeatModeFromValue(m_repeatGroup, repeatMode);
 
@@ -517,6 +566,10 @@ void SettingsDialog::saveToSettings() const
         s.setValue(QLatin1String(kSpeakerIdKey), m_comboSpeaker->currentIndex());
     if (m_speedSlider)
         s.setValue(QLatin1String(kTtsSpeedKey), m_speedSlider->value());
+    if (m_comboAppLanguage)
+        s.setValue(QLatin1String(kAppLanguageKey), m_comboAppLanguage->currentData().toString());
+    if (m_comboTtsLanguage)
+        s.setValue(QLatin1String(kTtsLanguageKey), m_comboTtsLanguage->currentData().toString());
     if (m_repeatGroup)
         s.setValue(QLatin1String(kRepeatModeKey), repeatModeToValue(m_repeatGroup));
     if (m_pauseSentenceMs)
