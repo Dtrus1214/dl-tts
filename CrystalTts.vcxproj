@@ -78,7 +78,7 @@
     <QtModules>core;network;gui;svg;multimedia;widgets;concurrent</QtModules>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="QtSettings">
-    <QtInstall>5.14.2_msvc2017_64</QtInstall>
+    <QtInstall>5.14.2_msvc2017</QtInstall>
     <QtModules>core;network;gui;svg;multimedia;widgets;concurrent</QtModules>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') OR !Exists('$(QtMsBuild)\Qt.props')">

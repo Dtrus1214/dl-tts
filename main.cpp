@@ -2,6 +2,7 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QIcon>
 #include <QLockFile>
 #include <QMessageBox>
 #include <QStandardPaths>
@@ -11,6 +12,7 @@ int main(int argc, char *argv[])
     QApplication a(argc, argv);
     a.setApplicationName(QStringLiteral("CrystalTts"));
     a.setApplicationDisplayName(QStringLiteral("CrystalTts"));
+    a.setWindowIcon(QIcon(QStringLiteral(":/icons/app.svg")));
     a.setQuitOnLastWindowClosed(false); // tray keeps app running when window is hidden
 
     const QString lockDir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);

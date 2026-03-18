@@ -76,16 +76,40 @@
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
+    <None Include="icons\app.svg">
+      <Filter>Resource Files</Filter>
+    </None>
     <None Include="icons\close.svg">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="icons\document-close.svg">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="icons\document.svg">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="icons\folder-open.svg">
       <Filter>Resource Files</Filter>
     </None>
     <QtRcc Include="icons.qrc">
       <Filter>Resource Files</Filter>
     </QtRcc>
+    <None Include="icons\man.svg">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="icons\maximize.svg">
+      <Filter>Resource Files</Filter>
+    </None>
     <None Include="icons\pause.svg">
       <Filter>Resource Files</Filter>
     </None>
     <None Include="icons\play.svg">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="icons\restore.svg">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="icons\save.svg">
       <Filter>Resource Files</Filter>
     </None>
     <None Include="icons\speaker.svg">
@@ -94,5 +118,17 @@
     <None Include="icons\stop.svg">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="icons\woman.svg">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="icons\zoom-in.svg">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="icons\zoom-out.svg">
+      <Filter>Resource Files</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="C:\Work\dl-tts\CrystalTts_resource.rc" />
   </ItemGroup>
 </Project>

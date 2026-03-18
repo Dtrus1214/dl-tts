@@ -24,6 +24,7 @@
 #include <QActionGroup>
 #include <QStyle>
 #include <QEvent>
+#include <QIcon>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -250,7 +251,7 @@ void MainWindow::setupTrayIcon()
 
     m_trayIcon = new QSystemTrayIcon(this);
     m_trayIcon->setContextMenu(m_trayMenu);
-    m_trayIcon->setIcon(style()->standardIcon(QStyle::SP_MediaVolume));
+    m_trayIcon->setIcon(QIcon(QStringLiteral(":/icons/app.svg")));
     m_trayIcon->setToolTip(tr("CrystalTts - Text selection for TTS"));
     connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
         if (reason == QSystemTrayIcon::DoubleClick || reason == QSystemTrayIcon::Trigger)

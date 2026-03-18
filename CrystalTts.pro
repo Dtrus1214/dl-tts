@@ -19,6 +19,10 @@ unix:!macx: LIBS += -lxcb -lxcb-xtest -lxcb-keysyms
 
 DEFINES += QT_DEPRECATED_WARNINGS
 
+# Windows: set the executable icon if an .ico is provided.
+# (Runtime window/tray icon is handled via Qt resources.)
+win32:exists(icons/app.ico): RC_ICONS += icons/app.ico
+
 # Optional: set POPPLER_DIR to Poppler install dir for PDF viewer (e.g. C:/poppler-build)
 POPPLER_DIR = c:/poppler-build
 
