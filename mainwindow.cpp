@@ -23,6 +23,7 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QStyle>
+#include <QEvent>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -511,12 +512,40 @@ void MainWindow::updateSpeakerToolTip()
 void MainWindow::openPdfViewer()
 {
     if (!m_pdfViewerForm) {
-        m_pdfViewerForm = new PdfViewerForm(m_ttsEngine, this);
+        // IMPORTANT (Windows): if the PDF viewer is an "owned" window of a topmost owner,
+        // it inherits the topmost z-order band. Create it as a true top-level window.
+        m_pdfViewerForm = new PdfViewerForm(m_ttsEngine, nullptr);
         m_pdfViewerForm->setAttribute(Qt::WA_DeleteOnClose, false);
+        m_pdfViewerForm->installEventFilter(this);
     }
+
+    m_restoreMainWindowAfterPdf = isVisible();
+    if (m_restoreMainWindowAfterPdf)
+        hide();
+
     m_pdfViewerForm->show();
     m_pdfViewerForm->raise();
     m_pdfViewerForm->activateWindow();
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_pdfViewerForm && event) {
+        switch (event->type()) {
+        case QEvent::Hide:
+        case QEvent::Close:
+            if (m_restoreMainWindowAfterPdf) {
+                m_restoreMainWindowAfterPdf = false;
+                show();
+                raise();
+                activateWindow();
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::onTtsStateChanged(int state)

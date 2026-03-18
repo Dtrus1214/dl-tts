@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QEvent>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -42,6 +43,7 @@ protected:
     void closeEvent(QCloseEvent *event) override;
     void showEvent(QShowEvent *event) override;
     void hideEvent(QHideEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 #if defined(Q_OS_WIN)
     bool nativeEvent(const QByteArray &eventType, void *message, long *result) override;
 #endif
@@ -94,6 +96,8 @@ private:
     QSystemTrayIcon *m_trayIcon = nullptr;
     QMenu *m_trayMenu = nullptr;
     QAction *m_showHideAction = nullptr;
+
+    bool m_restoreMainWindowAfterPdf = false;
 
 #if defined(Q_OS_WIN)
     bool m_playAfterCopy = false;
