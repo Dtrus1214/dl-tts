@@ -27,6 +27,8 @@
 #include <QTimer>
 #include <QDateTime>
 #include <QProgressBar>
+#include <QScrollBar>
+#include <QRegularExpression>
 #if defined(Q_OS_WIN)
 #include <windows.h>
 #endif
@@ -75,6 +77,24 @@ public:
     }
 
     QString selectedText() const { return m_selectedText; }
+    int pageIndex() const { return m_pageIndex; }
+
+    void setPlaybackHighlightRectsPt(const QVector<QRectF> &rectsPt)
+    {
+        m_playbackHighlightRectsPx.clear();
+        m_playbackHighlightRectsPx.reserve(rectsPt.size());
+        for (const QRectF &rPt : rectsPt)
+            m_playbackHighlightRectsPx.push_back(pdfPointsToPixelRect(rPt));
+        update();
+    }
+
+    void clearPlaybackHighlight()
+    {
+        if (!m_playbackHighlightRectsPx.empty()) {
+            m_playbackHighlightRectsPx.clear();
+            update();
+        }
+    }
 
     void fullResetOtherPage()
     {
@@ -97,6 +117,15 @@ protected:
         QPainter p(this);
         p.setRenderHint(QPainter::SmoothPixmapTransform, true);
         p.drawImage(QPoint(0, 0), m_image);
+
+        if (!m_playbackHighlightRectsPx.empty()) {
+            p.setPen(Qt::NoPen);
+            p.setBrush(QColor(255, 230, 153, 150)); // warm highlight
+            for (const QRect &r : m_playbackHighlightRectsPx) {
+                if (!r.isNull() && r.isValid())
+                    p.drawRect(r);
+            }
+        }
 
         if (m_hasSelection) {
             p.setPen(Qt::NoPen);
@@ -610,6 +639,7 @@ private:
 
     std::vector<TextBoxItem> m_textBoxes;
     std::vector<QRect> m_selectedPixelRects;
+    std::vector<QRect> m_playbackHighlightRectsPx;
 
     qint64 m_lastDoubleClickEventMs = 0;
     QPoint m_lastDoubleClickPos;
@@ -692,6 +722,10 @@ PdfViewerForm::PdfViewerForm(TtsEngine *ttsEngine, QWidget *parent)
     , m_ttsEngine(ttsEngine)
 {
     setupUi();
+#ifdef HAVE_POPPLER
+    if (m_ttsEngine)
+        connect(m_ttsEngine, &TtsEngine::stateChanged, this, &PdfViewerForm::onTtsStateChanged);
+#endif
 }
 
 PdfViewerForm::~PdfViewerForm()
@@ -1261,14 +1295,794 @@ void PdfViewerForm::onPlayTts()
         QMessageBox::warning(this, tr("TTS"), tr("TTS engine is not available."));
         return;
     }
+#ifdef HAVE_POPPLER
+    if (!m_doc) {
+        QMessageBox::information(this, tr("TTS"), tr("Open a PDF first."));
+        return;
+    }
+    if (m_sentenceTtsActive) {
+        stopSentenceTts();
+        return;
+    }
+    rebuildSentenceCues();
+    if (m_sentenceCues.isEmpty()) {
+        QMessageBox::information(this, tr("TTS"), tr("No readable text found in this PDF."));
+        return;
+    }
+    startSentenceTts(0);
+#else
     if (m_extractedText.trimmed().isEmpty()) {
         QMessageBox::information(this, tr("TTS"), tr("No text to speak. Open a PDF first."));
         return;
     }
     m_ttsEngine->speak(m_extractedText);
+#endif
 }
 
 #ifdef HAVE_POPPLER
+namespace {
+struct TextBoxPt {
+    QRectF rectPt;
+    QString text;
+};
+
+struct TextItemPt {
+    QString text;
+    QRectF rectPt;
+    double fontSize = 0.0; // heuristic: rect height
+    bool isBold = false;
+};
+
+struct LinePt {
+    QVector<TextItemPt> items;
+    QString text;
+    QRectF rectPt;
+    double avgFontSize = 0.0;
+    bool mostlyBold = false;
+
+    double left() const { return rectPt.left(); }
+    double right() const { return rectPt.right(); }
+    double top() const { return rectPt.top(); }
+    double bottom() const { return rectPt.bottom(); }
+};
+
+struct ParagraphPt {
+    QVector<LinePt> lines;
+    QString text;
+    QRectF rectPt;
+    double avgFontSize = 0.0;
+    bool mostlyBold = false;
+};
+
+enum class BlockTypePt { Title, Subtitle, Body };
+
+static QRectF uniteRectsPt(const QRectF &a, const QRectF &b)
+{
+    if (a.isNull())
+        return b;
+    if (b.isNull())
+        return a;
+    return a.united(b);
+}
+
+static QString normalizeSpacesLocal(QString s)
+{
+    s.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));
+    return s.trimmed();
+}
+
+static bool endsWithTerminalPunctuationLocal(const QString &s)
+{
+    const QString t = s.trimmed();
+    return t.endsWith(QLatin1Char('.')) || t.endsWith(QLatin1Char('!')) || t.endsWith(QLatin1Char('?'));
+}
+
+static bool isLikelyHeadingTextLocal(const QString &s)
+{
+    const QString t = s.trimmed();
+    if (t.isEmpty())
+        return false;
+    if (t.length() > 120)
+        return false;
+    if (endsWithTerminalPunctuationLocal(t))
+        return false;
+    return true;
+}
+
+static std::vector<int> computeReadingOrderForCue(const std::vector<TextBoxPt> &boxes)
+{
+    std::vector<int> order;
+    order.reserve(boxes.size());
+    for (int i = 0; i < static_cast<int>(boxes.size()); ++i)
+        order.push_back(i);
+
+    std::sort(order.begin(), order.end(), [&boxes](int ai, int bi) {
+        const QRectF a = boxes[static_cast<size_t>(ai)].rectPt;
+        const QRectF b = boxes[static_cast<size_t>(bi)].rectPt;
+
+        const qreal ay = a.center().y();
+        const qreal by = b.center().y();
+
+        const qreal aLineHeight = qMax<qreal>(1.0, a.height());
+        const qreal bLineHeight = qMax<qreal>(1.0, b.height());
+        const qreal lineTolerance = qMax<qreal>(2.0, qMin(aLineHeight, bLineHeight) * 0.6);
+
+        if (qAbs(ay - by) > lineTolerance)
+            return ay < by;
+
+        const qreal ax = a.x();
+        const qreal bx = b.x();
+        if (ax != bx)
+            return ax < bx;
+
+        return ai < bi;
+    });
+
+    return order;
+}
+
+static QVector<TextItemPt> extractTextItemsPt(Poppler::Page *page)
+{
+    QVector<TextItemPt> out;
+    if (!page)
+        return out;
+    const QList<Poppler::TextBox *> boxes = page->textList();
+    out.reserve(boxes.size());
+    for (Poppler::TextBox *box : boxes) {
+        if (!box)
+            continue;
+        TextItemPt item;
+        item.text = normalizeSpacesLocal(box->text());
+        item.rectPt = box->boundingBox();
+        item.fontSize = item.rectPt.height();
+        item.isBold = false;
+        if (!item.text.isEmpty() && item.rectPt.isValid() && !item.rectPt.isNull())
+            out.push_back(item);
+        delete box;
+    }
+    return out;
+}
+
+static bool sameVisualLineLocal(const TextItemPt &a, const TextItemPt &b, double yTolerance)
+{
+    return qAbs(a.rectPt.center().y() - b.rectPt.center().y()) <= yTolerance;
+}
+
+static QVector<LinePt> groupItemsIntoLinesLocal(QVector<TextItemPt> items)
+{
+    QVector<LinePt> lines;
+    if (items.isEmpty())
+        return lines;
+
+    std::sort(items.begin(), items.end(), [](const TextItemPt &a, const TextItemPt &b) {
+        const double ay = a.rectPt.center().y();
+        const double by = b.rectPt.center().y();
+        if (!qFuzzyCompare(ay + 1.0, by + 1.0))
+            return ay < by;
+        return a.rectPt.left() < b.rectPt.left();
+    });
+
+    double sumH = 0.0;
+    for (const auto &it : items)
+        sumH += it.rectPt.height();
+    const double avgHeight = items.isEmpty() ? 0.0 : (sumH / items.size());
+    const double yTolerance = qMax(2.0, avgHeight * 0.4);
+
+    QVector<QVector<TextItemPt>> buckets;
+    for (const TextItemPt &item : items) {
+        bool placed = false;
+        for (auto &bucket : buckets) {
+            if (!bucket.isEmpty() && sameVisualLineLocal(bucket.first(), item, yTolerance)) {
+                bucket.push_back(item);
+                placed = true;
+                break;
+            }
+        }
+        if (!placed)
+            buckets.push_back({item});
+    }
+
+    lines.reserve(buckets.size());
+    for (auto &bucket : buckets) {
+        std::sort(bucket.begin(), bucket.end(), [](const TextItemPt &a, const TextItemPt &b) {
+            return a.rectPt.left() < b.rectPt.left();
+        });
+
+        LinePt line;
+        QRectF united;
+        double fontSum = 0.0;
+        int boldCount = 0;
+        QStringList parts;
+        for (const auto &it : bucket) {
+            line.items.push_back(it);
+            united = uniteRectsPt(united, it.rectPt);
+            fontSum += it.fontSize;
+            if (it.isBold)
+                ++boldCount;
+            parts << it.text;
+        }
+        line.rectPt = united;
+        line.avgFontSize = bucket.isEmpty() ? 0.0 : fontSum / bucket.size();
+        line.mostlyBold = !bucket.isEmpty() && (boldCount >= (bucket.size() / 2.0));
+        line.text = normalizeSpacesLocal(parts.join(QLatin1Char(' ')));
+        lines.push_back(line);
+    }
+    return lines;
+}
+
+static QString mergeLineTextsLocal(QString left, QString right)
+{
+    left = left.trimmed();
+    right = right.trimmed();
+    if (left.isEmpty())
+        return right;
+    if (right.isEmpty())
+        return left;
+    if (left.endsWith(QLatin1Char('-'))) {
+        left.chop(1);
+        return left + right;
+    }
+    return left + QLatin1Char(' ') + right;
+}
+
+static double computeMedianLineGapLocal(const QVector<LinePt> &lines)
+{
+    QVector<double> gaps;
+    for (int i = 1; i < lines.size(); ++i) {
+        const double gap = lines[i].top() - lines[i - 1].bottom();
+        if (gap >= 0.0)
+            gaps.push_back(gap);
+    }
+    if (gaps.isEmpty())
+        return 4.0;
+    std::sort(gaps.begin(), gaps.end());
+    return gaps[gaps.size() / 2];
+}
+
+static double computeTypicalLeftLocal(const QVector<LinePt> &lines)
+{
+    if (lines.isEmpty())
+        return 0.0;
+    QVector<double> lefts;
+    lefts.reserve(lines.size());
+    for (const auto &l : lines)
+        lefts.push_back(l.left());
+    std::sort(lefts.begin(), lefts.end());
+    return lefts[lefts.size() / 2];
+}
+
+static bool isParagraphContinuationLocal(const LinePt &prev, const LinePt &curr, double medianLineGap, double indentThreshold)
+{
+    const QString prevText = prev.text.trimmed();
+    if (prevText.isEmpty())
+        return true;
+
+    auto startsWithBulletMarker = [](const QString &t) {
+        const QString s = t.trimmed();
+        return s.startsWith(QChar(0x2022)) /* • */
+            || s.startsWith(QChar(0x25CF)) /* ● */
+            || s.startsWith(QLatin1Char('-'))
+            || s.startsWith(QLatin1Char('*'));
+    };
+
+    auto startsWithOrderedListMarker = [](const QString &t) {
+        const QString s = t.trimmed();
+        if (s.size() < 2)
+            return false;
+        int i = 0;
+        while (i < s.size() && s[i].isDigit())
+            ++i;
+        if (i == 0 || i >= s.size())
+            return false;
+        return s[i] == QLatin1Char('.') || s[i] == QLatin1Char(')') || s[i] == QLatin1Char(':');
+    };
+
+    auto firstNonSpace = [](const QString &t) -> QChar {
+        for (int i = 0; i < t.size(); ++i) {
+            if (!t[i].isSpace())
+                return t[i];
+        }
+        return QChar();
+    };
+
+    const QString currText = curr.text.trimmed();
+
+    // Prevent title/subtitle/tagline from being merged into one paragraph:
+    // a noticeable font-size change between adjacent lines is usually a block boundary.
+    if (prev.avgFontSize > 0.0 && curr.avgFontSize > 0.0) {
+        const double ratio = curr.avgFontSize / prev.avgFontSize;
+        const double invRatio = prev.avgFontSize / curr.avgFontSize;
+        const double fontChange = qMax(ratio, invRatio);
+        if (fontChange >= 1.18) {
+            const bool bothShort = prevText.size() <= 140 && currText.size() <= 140;
+            if (bothShort)
+                return false;
+        }
+    }
+
+    // Avoid merging a heading line with the first body sentence.
+    // Headings are usually short and don't end with terminal punctuation.
+    const bool prevLooksLikeHeading = isLikelyHeadingTextLocal(prevText) && prevText.size() <= 120;
+    if (prevLooksLikeHeading && !startsWithBulletMarker(currText) && !startsWithOrderedListMarker(currText)) {
+        const QChar c0 = firstNonSpace(curr.text);
+        const bool currLooksLikeSentence = (c0.isUpper() || c0.isDigit());
+        const bool prevEmphasized = prev.mostlyBold || (prev.avgFontSize > 0.0 && curr.avgFontSize > 0.0
+                                                       && prev.avgFontSize >= curr.avgFontSize * 1.06);
+        if (currLooksLikeSentence && prevEmphasized)
+            return false;
+    }
+
+    const double verticalGap = curr.top() - prev.bottom();
+    if (verticalGap > qMax(8.0, medianLineGap * 1.8))
+        return false;
+
+    const double indentDelta = curr.left() - prev.left();
+    if (indentDelta > indentThreshold) {
+        // Hanging-indent continuation for bullets / list items.
+        // Example:
+        //   ● Plus Plan: Includes ... everything you
+        //     need for smarter...
+        const bool prevIsListItem = startsWithBulletMarker(prevText) || startsWithOrderedListMarker(prevText);
+        if (!prevIsListItem)
+            return false;
+        // If we're in a list item, only keep merging when the previous line didn't already look complete.
+        if (endsWithTerminalPunctuationLocal(prevText))
+            return false;
+    }
+
+    if (endsWithTerminalPunctuationLocal(prevText))
+        return false;
+
+    return true;
+}
+
+static QVector<ParagraphPt> groupLinesIntoParagraphsLocal(const QVector<LinePt> &lines)
+{
+    QVector<ParagraphPt> paragraphs;
+    if (lines.isEmpty())
+        return paragraphs;
+
+    const double medianLineGap = computeMedianLineGapLocal(lines);
+    const double typicalLeft = computeTypicalLeftLocal(lines);
+    const double indentThreshold = 12.0;
+
+    ParagraphPt current;
+    auto flush = [&]() {
+        if (current.lines.isEmpty())
+            return;
+        QRectF united;
+        double fontSum = 0.0;
+        int boldCount = 0;
+        QString text;
+        for (const auto &line : current.lines) {
+            united = uniteRectsPt(united, line.rectPt);
+            fontSum += line.avgFontSize;
+            if (line.mostlyBold)
+                ++boldCount;
+            text = text.isEmpty() ? line.text.trimmed() : mergeLineTextsLocal(text, line.text);
+        }
+        current.rectPt = united;
+        current.avgFontSize = current.lines.isEmpty() ? 0.0 : fontSum / current.lines.size();
+        current.mostlyBold = !current.lines.isEmpty() && (boldCount >= (current.lines.size() / 2.0));
+        current.text = normalizeSpacesLocal(text);
+        paragraphs.push_back(current);
+        current = ParagraphPt{};
+    };
+
+    for (int i = 0; i < lines.size(); ++i) {
+        const LinePt &line = lines[i];
+        if (current.lines.isEmpty()) {
+            current.lines.push_back(line);
+            continue;
+        }
+        const LinePt &prev = current.lines.last();
+        bool cont = isParagraphContinuationLocal(prev, line, medianLineGap, indentThreshold);
+        if (!cont) {
+            const bool similarToBodyLeft = qAbs(prev.left() - typicalLeft) < 10.0 && qAbs(line.left() - typicalLeft) < 10.0;
+            const double gap = line.top() - prev.bottom();
+            if (similarToBodyLeft && gap <= qMax(6.0, medianLineGap * 1.2) && !endsWithTerminalPunctuationLocal(prev.text))
+                cont = true;
+        }
+        if (cont)
+            current.lines.push_back(line);
+        else {
+            flush();
+            current.lines.push_back(line);
+        }
+    }
+    flush();
+    return paragraphs;
+}
+
+static double computeBodyFontEstimateLocal(const QVector<ParagraphPt> &paragraphs)
+{
+    if (paragraphs.isEmpty())
+        return 10.0;
+    QVector<double> fonts;
+    fonts.reserve(paragraphs.size());
+    for (const auto &p : paragraphs) {
+        if (!p.text.isEmpty())
+            fonts.push_back(p.avgFontSize);
+    }
+    if (fonts.isEmpty())
+        return 10.0;
+    std::sort(fonts.begin(), fonts.end());
+    return fonts[fonts.size() / 2];
+}
+
+static BlockTypePt classifyParagraphLocal(const ParagraphPt &p, double bodyFontEstimate, bool firstBlockOnPage)
+{
+    const QString text = p.text.trimmed();
+    if (text.isEmpty())
+        return BlockTypePt::Body;
+
+    const bool headingLike = isLikelyHeadingTextLocal(text);
+    const bool larger = p.avgFontSize > bodyFontEstimate * 1.35;
+    const bool somewhatLarger = p.avgFontSize > bodyFontEstimate * 1.15;
+
+    if (headingLike && larger) {
+        if (firstBlockOnPage || text.size() < 80)
+            return BlockTypePt::Title;
+    }
+    if (headingLike && (somewhatLarger || p.mostlyBold))
+        return BlockTypePt::Subtitle;
+    return BlockTypePt::Body;
+}
+
+static bool isCommonAbbreviationBeforeDot(const QString &text, int dotIndex)
+{
+    // Adapted from splogic.txt: keep a conservative, explicit list.
+    static const QSet<QString> abbreviations = {
+        QStringLiteral("mr"), QStringLiteral("mrs"), QStringLiteral("ms"),
+        QStringLiteral("dr"), QStringLiteral("prof"), QStringLiteral("sr"), QStringLiteral("jr"),
+        QStringLiteral("vs"), QStringLiteral("etc"),
+        QStringLiteral("e.g"), QStringLiteral("i.e"),
+        QStringLiteral("fig"), QStringLiteral("no"),
+        QStringLiteral("st"), QStringLiteral("mt"),
+        QStringLiteral("inc"), QStringLiteral("ltd"), QStringLiteral("co")
+    };
+
+    int start = dotIndex - 1;
+    while (start >= 0 && text[start].isLetter())
+        --start;
+    const QString word = text.mid(start + 1, dotIndex - start - 1).toLower();
+    if (abbreviations.contains(word))
+        return true;
+
+    // Single-letter initials: "A."
+    if (word.size() == 1 && word[0].isLetter())
+        return true;
+
+    return false;
+}
+
+static QVector<QPair<int, int>> splitSentenceRangesHeuristic(const QString &s, int maxSentenceLen = 240)
+{
+    QVector<QPair<int, int>> ranges;
+    const int n = s.size();
+    int start = 0;
+
+    auto pushRange = [&](int a, int b) {
+        a = qMax(0, a);
+        b = qMin(n, b);
+        while (a < b && s[a].isSpace())
+            ++a;
+        while (b > a && s[b - 1].isSpace())
+            --b;
+        if (b > a)
+            ranges.append(qMakePair(a, b));
+    };
+
+    auto isDashLike = [](QChar c) {
+        return c == QLatin1Char('-') || c == QChar(0x2013) /* – */ || c == QChar(0x2014) /* — */;
+    };
+
+    auto findClauseCutNear = [&](int a, int limit) -> int {
+        // Pick a "good" cut point near limit, preferring punctuation that sounds like a natural pause.
+        // Returns an index inside (a, n]; caller decides +1 rules.
+        const int minKeep = qMax(a + 60, a + maxSentenceLen / 3); // avoid tiny fragments
+        const int lo = qMin(qMax(minKeep, a + 1), n);
+        const int hi = qMin(qMax(limit, lo), n - 1);
+
+        auto scoreAt = [&](int j) -> int {
+            const QChar cc = s[j];
+            if (cc == QLatin1Char(';'))
+                return 100;
+            if (cc == QLatin1Char(':'))
+                return 95;
+            if (cc == QLatin1Char(','))
+                return 90;
+            if (isDashLike(cc))
+                return 85;
+            if (cc == QLatin1Char(')') || cc == QLatin1Char(']'))
+                return 80;
+            if (cc.isSpace())
+                return 30;
+            return 0;
+        };
+
+        int bestJ = -1;
+        int bestScore = -1;
+        for (int j = hi; j >= lo; --j) {
+            const int sc = scoreAt(j);
+            if (sc <= 0)
+                continue;
+            // Prefer cutting *after* punctuation/space, but avoid splitting mid-word.
+            if (!s[j].isSpace() && j + 1 < n && !s[j + 1].isSpace() && !isDashLike(s[j]))
+                continue;
+            if (sc > bestScore) {
+                bestScore = sc;
+                bestJ = j;
+                if (bestScore >= 95) // ';' or ':' is good enough
+                    break;
+            }
+        }
+        return bestJ;
+    };
+
+    for (int i = 0; i < n; ++i) {
+        const QChar c = s[i];
+        const bool punctEnd = (c == QLatin1Char('.') || c == QLatin1Char('!') || c == QLatin1Char('?'));
+
+        if (!punctEnd)
+            continue;
+
+        int end = i + 1;
+        if (c == QLatin1Char('.')) {
+            // Avoid splitting abbreviations like "Dr." or "e.g."
+            if (isCommonAbbreviationBeforeDot(s, i))
+                continue;
+            // Avoid splitting decimals like 3.14
+            if (i > 0 && i + 1 < n && s[i - 1].isDigit() && s[i + 1].isDigit())
+                continue;
+        }
+
+        // Boundary if next char is space/end/quote/bracket (same as splogic).
+        bool boundary = false;
+        if (i + 1 >= n) {
+            boundary = true;
+        } else {
+            const QChar next = s[i + 1];
+            if (next.isSpace() || next == QLatin1Char('"') || next == QLatin1Char('\'')
+                || next == QLatin1Char(')') || next == QLatin1Char(']')) {
+                boundary = true;
+            }
+        }
+        if (!boundary)
+            continue;
+
+        // include trailing quotes/brackets in the sentence
+        while (end < n) {
+            const QChar cc = s[end];
+            if (cc == QLatin1Char('"') || cc == QLatin1Char('\'') || cc == QLatin1Char(')')
+                || cc == QLatin1Char(']')) {
+                ++end;
+            } else {
+                break;
+            }
+        }
+
+        pushRange(start, end);
+        start = end;
+        while (start < n && s[start].isSpace())
+            ++start;
+    }
+
+    if (start < n)
+        pushRange(start, n);
+
+    if (maxSentenceLen > 0) {
+        QVector<QPair<int, int>> out;
+        for (const auto &r : ranges) {
+            int a = r.first;
+            const int b = r.second;
+            while (b - a > maxSentenceLen) {
+                int cut = -1;
+                const int limit = a + maxSentenceLen;
+                const int best = findClauseCutNear(a, qMin(limit, b - 1));
+                if (best >= 0) {
+                    cut = best + 1;
+                } else {
+                    cut = limit;
+                }
+                out.append(qMakePair(a, cut));
+                a = cut;
+            }
+            if (b > a)
+                out.append(qMakePair(a, b));
+        }
+        ranges = out;
+    }
+
+    return ranges;
+}
+} // namespace
+
+void PdfViewerForm::rebuildSentenceCues()
+{
+    m_sentenceCues.clear();
+    m_extractedText.clear();
+    if (!m_doc)
+        return;
+
+    const int numPages = m_doc->numPages();
+    for (int pageIndex = 0; pageIndex < numPages; ++pageIndex) {
+        std::unique_ptr<Poppler::Page> page(m_doc->page(pageIndex));
+        if (!page)
+            continue;
+
+        QVector<TextItemPt> items = extractTextItemsPt(page.get());
+        QVector<LinePt> lines = groupItemsIntoLinesLocal(items);
+        QVector<ParagraphPt> paragraphs = groupLinesIntoParagraphsLocal(lines);
+        if (paragraphs.isEmpty())
+            continue;
+
+        const double bodyFontEstimate = computeBodyFontEstimateLocal(paragraphs);
+
+        for (int pi = 0; pi < paragraphs.size(); ++pi) {
+            const ParagraphPt &p = paragraphs[pi];
+            const BlockTypePt type = classifyParagraphLocal(p, bodyFontEstimate, pi == 0);
+            const QString paraText = p.text;
+            if (paraText.trimmed().isEmpty())
+                continue;
+
+            // Build spans by concatenating the underlying text items in reading order.
+            // (Good-enough mapping to highlight blocks/sentences.)
+            QVector<TextBoxPt> flat;
+            for (const auto &ln : p.lines) {
+                for (const auto &it : ln.items)
+                    flat.append(TextBoxPt{it.rectPt, it.text});
+            }
+            std::vector<TextBoxPt> flatVec;
+            flatVec.reserve(static_cast<size_t>(flat.size()));
+            for (const auto &x : flat)
+                flatVec.push_back(x);
+            const std::vector<int> order = computeReadingOrderForCue(flatVec);
+
+            struct Span {
+                int start = 0;
+                int end = 0;
+                QRectF rectPt;
+            };
+            QVector<Span> spans;
+            spans.reserve(static_cast<int>(order.size()));
+
+            QString merged;
+            merged.reserve(2048);
+            for (size_t oi = 0; oi < order.size(); ++oi) {
+                const TextBoxPt &b = flatVec[static_cast<size_t>(order[oi])];
+                if (!merged.isEmpty() && !merged.endsWith(QLatin1Char(' ')))
+                    merged += QLatin1Char(' ');
+                const int st = merged.size();
+                merged += b.text;
+                const int en = merged.size();
+                spans.append(Span{st, en, b.rectPt});
+            }
+            merged = normalizeSpacesLocal(merged);
+            if (merged.isEmpty())
+                continue;
+
+            if (type == BlockTypePt::Body) {
+                const auto sentenceRanges = splitSentenceRangesHeuristic(merged);
+                for (const auto &r : sentenceRanges) {
+                    const QString sentence = merged.mid(r.first, r.second - r.first).trimmed();
+                    if (sentence.isEmpty())
+                        continue;
+                    SentenceCue cue;
+                    cue.pageIndex = pageIndex;
+                    cue.text = sentence;
+                    for (const Span &sp : spans) {
+                        if (sp.end <= r.first || sp.start >= r.second)
+                            continue;
+                        cue.rectsPt.append(sp.rectPt);
+                    }
+                    if (!cue.rectsPt.isEmpty())
+                        m_sentenceCues.append(std::move(cue));
+                }
+            } else {
+                // Title / Subtitle: keep as a single unit (not sentence-split) and don't merge into body.
+                SentenceCue cue;
+                cue.pageIndex = pageIndex;
+                cue.text = merged;
+                for (const Span &sp : spans)
+                    cue.rectsPt.append(sp.rectPt);
+                if (!cue.rectsPt.isEmpty())
+                    m_sentenceCues.append(std::move(cue));
+            }
+
+            m_extractedText += merged;
+            m_extractedText += QLatin1String("\n\n");
+        }
+    }
+    m_extractedText = m_extractedText.trimmed();
+}
+
+void PdfViewerForm::startSentenceTts(int startIndex)
+{
+    if (!m_ttsEngine || m_sentenceCues.isEmpty())
+        return;
+    m_sentenceTtsActive = true;
+    m_currentCueIndex = qBound(0, startIndex, m_sentenceCues.size() - 1);
+    speakNextSentence();
+}
+
+void PdfViewerForm::stopSentenceTts()
+{
+    m_sentenceTtsActive = false;
+    m_currentCueIndex = -1;
+    setPlaybackHighlight(nullptr);
+    if (m_ttsEngine)
+        m_ttsEngine->stop();
+}
+
+void PdfViewerForm::speakNextSentence()
+{
+    if (!m_sentenceTtsActive || !m_ttsEngine)
+        return;
+    if (m_currentCueIndex < 0 || m_currentCueIndex >= m_sentenceCues.size()) {
+        stopSentenceTts();
+        return;
+    }
+    const SentenceCue &cue = m_sentenceCues[m_currentCueIndex];
+    setPlaybackHighlight(&cue);
+    scrollToCue(cue);
+    m_ttsEngine->speak(cue.text);
+}
+
+void PdfViewerForm::setPlaybackHighlight(const SentenceCue *cue)
+{
+    if (!m_pagesContainer)
+        return;
+    for (QWidget *cw : m_pagesContainer->findChildren<QWidget *>()) {
+        auto *pw = dynamic_cast<PdfPageWidget *>(cw);
+        if (!pw)
+            continue;
+        if (cue && pw->pageIndex() == cue->pageIndex)
+            pw->setPlaybackHighlightRectsPt(cue->rectsPt);
+        else
+            pw->clearPlaybackHighlight();
+    }
+}
+
+void PdfViewerForm::scrollToCue(const SentenceCue &cue)
+{
+    if (!m_scrollArea || !m_pagesContainer)
+        return;
+    PdfPageWidget *target = nullptr;
+    for (QWidget *cw : m_pagesContainer->findChildren<QWidget *>()) {
+        auto *pw = dynamic_cast<PdfPageWidget *>(cw);
+        if (pw && pw->pageIndex() == cue.pageIndex) {
+            target = pw;
+            break;
+        }
+    }
+    if (!target)
+        return;
+
+    m_scrollArea->ensureWidgetVisible(target, 20, 20);
+
+    if (!cue.rectsPt.isEmpty()) {
+        // Aim near top of the page (good enough for page-change scrolling).
+        const QPoint anchorInContainer = target->mapTo(m_pagesContainer, QPoint(0, 0));
+        if (QScrollBar *sb = m_scrollArea->verticalScrollBar())
+            sb->setValue(qMax(0, anchorInContainer.y() - 20));
+    }
+}
+
+void PdfViewerForm::onTtsStateChanged(int state)
+{
+    const int prev = m_lastTtsState;
+    m_lastTtsState = state;
+    if (!m_sentenceTtsActive)
+        return;
+    if (state == TtsEngine::Ready && prev == TtsEngine::Speaking) {
+        ++m_currentCueIndex;
+        speakNextSentence();
+    } else if (state == TtsEngine::BackendError) {
+        stopSentenceTts();
+    }
+}
+
 double PdfViewerForm::computeFitToWindowDpi() const
 {
     if (!m_doc || m_doc->numPages() <= 0)
@@ -1398,6 +2212,9 @@ void PdfViewerForm::loadPdf(const QString &path)
 
     m_currentPdfPath = path;
     m_extractedText.clear();
+    m_sentenceCues.clear();
+    m_sentenceTtsActive = false;
+    m_currentCueIndex = -1;
     const int numPages = m_doc->numPages();
 
     auto hideLoadProgress = [this]() {
@@ -1425,18 +2242,14 @@ void PdfViewerForm::loadPdf(const QString &path)
     }
     QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
 
+    // Avoid extracting the entire document text up-front.
+    // Sentence cues are built on-demand when the user starts TTS.
     for (int i = 0; i < numPages; ++i) {
-        std::unique_ptr<Poppler::Page> page(m_doc->page(i));
-        if (page) {
-            m_extractedText += page->text(QRectF());
-            m_extractedText += QLatin1String("\n\n");
-        }
         if (m_pdfLoadProgress && numPages > 0) {
             m_pdfLoadProgress->setValue(i + 1);
             QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         }
     }
-    m_extractedText = m_extractedText.trimmed();
 
     m_zoomFactor = 1.0;
     if (m_pdfLoadProgress && numPages > 0)
@@ -1467,12 +2280,13 @@ void PdfViewerForm::loadPdf(const QString &path)
     if (m_btnZoomOut)
         m_btnZoomOut->setEnabled(true);
 
-    if (!m_extractedText.isEmpty() && m_ttsEngine && m_ttsEngine->isAvailable())
-        m_ttsEngine->speak(m_extractedText);
+    // Don't auto-start TTS here.
 }
 
 void PdfViewerForm::clearPdf()
 {
+    stopSentenceTts();
+    m_sentenceCues.clear();
     m_currentPdfPath.clear();
     m_extractedText.clear();
 

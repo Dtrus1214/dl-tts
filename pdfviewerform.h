@@ -6,6 +6,7 @@
 #include <QPoint>
 #include <QRect>
 #include <QVector>
+#include <QRectF>
 
 class QEvent;
 #ifdef Q_OS_WIN
@@ -76,6 +77,27 @@ private:
 #ifdef HAVE_POPPLER
     double computeFitToWindowDpi() const;
     void rebuildPdfPageWidgets(QProgressBar *progress = nullptr, int progressStart = 0, int progressEnd = 0);
+#endif
+
+#ifdef HAVE_POPPLER
+    struct SentenceCue {
+        int pageIndex = -1;
+        QString text;
+        QVector<QRectF> rectsPt; // sentence highlight rectangles in PDF points (1/72")
+    };
+
+    void rebuildSentenceCues();
+    void startSentenceTts(int startIndex = 0);
+    void stopSentenceTts();
+    void speakNextSentence();
+    void setPlaybackHighlight(const SentenceCue *cue);
+    void scrollToCue(const SentenceCue &cue);
+    void onTtsStateChanged(int state);
+
+    QVector<SentenceCue> m_sentenceCues;
+    int m_currentCueIndex = -1;
+    int m_lastTtsState = 0;
+    bool m_sentenceTtsActive = false;
 #endif
 
     TtsEngine *m_ttsEngine = nullptr;
